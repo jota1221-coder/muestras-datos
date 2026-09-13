@@ -11,6 +11,13 @@ export const metadata: Metadata = {
   description:
     "Teléfonos en un solo formato, duplicados unificados y CUIT verificados. Probalo con la planilla de ejemplo o con la tuya.",
   robots: { index: false, follow: false },
+  openGraph: {
+    title: "Tu planilla, ordenada sola",
+    description:
+      "Teléfonos en un solo formato, duplicados unificados y CUIT verificados. Probalo con la planilla de ejemplo o con la tuya.",
+    url: "/planilla",
+    type: "website",
+  },
 };
 
 export default function PlanillaPage() {
