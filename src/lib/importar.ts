@@ -6,6 +6,7 @@
  *  archivo no sale de tu teléfono" y que sea verdad. */
 
 import { masFrecuentePorGrupo, sinAcentos } from "./texto";
+import { normalizarSiNo } from "./limpiar";
 import type { Canonico, Columna, Preset, TipoColumna } from "./planillas/tipos";
 
 /** Tope defensivo: una planilla enorme colgaría el celular del visitante,
@@ -16,22 +17,26 @@ export const MAX_BYTES = 4 * 1024 * 1024;
 export class ErrorImportacion extends Error {}
 
 /** Extrae texto plano de cualquier tipo de celda de exceljs (fórmulas,
- *  hipervínculos, texto enriquecido). Igual que en el importador del CRM. */
+ *  hipervínculos, texto enriquecido). Igual que en el importador del CRM.
+ *
+ *  NO recorta: el espacio invisible al final es justamente uno de los
+ *  hallazgos que la muestra tiene que poder mostrar. Se recorta después,
+ *  y solo donde corresponde (los encabezados). */
 function texto(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "object") {
     const o = v as Record<string, unknown>;
-    if (typeof o.text === "string") return o.text.trim();
-    if (o.result !== undefined && o.result !== null) return String(o.result).trim();
-    if (typeof o.hyperlink === "string") return o.hyperlink.trim();
+    if (typeof o.text === "string") return o.text;
+    if (o.result !== undefined && o.result !== null) return String(o.result);
+    if (typeof o.hyperlink === "string") return o.hyperlink;
     if (Array.isArray(o.richText)) {
-      return (o.richText as { text: string }[]).map((r) => r.text).join("").trim();
+      return (o.richText as { text: string }[]).map((r) => r.text).join("");
     }
     if (o instanceof Date) return (o as Date).toISOString().slice(0, 10);
     return "";
   }
   if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v).trim();
+  return String(v);
 }
 
 const norm = (s: string) => sinAcentos(s).replace(/[^a-z0-9]/g, "");
@@ -47,6 +52,8 @@ const POR_ENCABEZADO: [RegExp, TipoColumna][] = [
   [/(precio|monto|importe|total|valor|saldo|deuda)/, "moneda"],
   [/(localidad|ciudad|zona|barrio|partido|sucursal|obrasocial|cobertura)/, "localidad"],
   [/(nombre|razon|cliente|paciente|propietario|apellido|titular|empresa)/, "nombre"],
+  [/(pago|pagado|entregado|activo|vigente|confirmad|cobrado|enviado|abonado)/, "siNo"],
+  [/(cantidad|stock|unidades|cant|edad|kilos|litros)/, "numero"],
 ];
 
 /** Proporción de valores no vacíos que cumplen una condición. */
@@ -68,6 +75,16 @@ const pareceFecha = (v: string) =>
 
 const pareceMoneda = (v: string) => /^[^\d]*(\$|u\$s|usd)/i.test(v.trim());
 
+const pareceSiNo = (v: string) => normalizarSiNo(v) !== null;
+
+const pareceNumero = (v: string) => {
+  const t = v.trim();
+  if (!t || /[a-zA-Z]/.test(t)) return false;
+  const d = t.replace(/[.,]/g, "");
+  // Se excluye el largo de un teléfono para no pisar esa detección.
+  return /^\d+$/.test(d) && d.length < 8;
+};
+
 /** Adivina qué es cada columna. El encabezado acierta casi siempre, pero
  *  nunca alcanza solo: en una planilla ajena aparecen títulos que no se
  *  pueden anticipar ("Último pedido", "Dato 2"). Por eso, cuando el nombre
@@ -78,9 +95,13 @@ function tipoDeColumna(encabezado: string, valores: string[]): TipoColumna {
   for (const [re, tipo] of POR_ENCABEZADO) {
     if (re.test(n)) return tipo;
   }
+  // Sí/No primero: acepta muy pocos valores distintos, así que cuando da
+  // alto es casi seguro, y si no se chequea antes cae en "texto".
+  if (proporcion(valores, pareceSiNo) >= 0.8) return "siNo";
   if (proporcion(valores, pareceFecha) >= 0.6) return "fecha";
   if (proporcion(valores, pareceMoneda) >= 0.6) return "moneda";
   if (proporcion(valores, pareceTelefono) >= 0.6) return "telefono";
+  if (proporcion(valores, pareceNumero) >= 0.8) return "numero";
   return "texto";
 }
 

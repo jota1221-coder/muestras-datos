@@ -17,6 +17,9 @@ function lineasDeConteo(c: Conteos) {
     { n: c.fechasNormalizadas, t: "fechas pasadas a un solo formato" },
     { n: c.cuitInvalidos, t: "CUIT con el dígito verificador mal" },
     { n: c.cuitRotosPorExcel, t: "CUIT que rompió Excel solo" },
+    { n: c.filasIdenticas, t: "filas repetidas carácter por carácter" },
+    { n: c.siNoUnificados, t: "Sí/No escritos de varias formas" },
+    { n: c.espaciosCorregidos, t: "celdas con espacios invisibles que rompen los BUSCARV" },
     { n: c.filasSinTelefono, t: "filas sin ningún teléfono" },
   ].filter((l) => l.n > 0);
 }

@@ -130,3 +130,59 @@ describe("los tres presets", () => {
     }
   });
 });
+
+describe("planillas que no son de gente (catálogo, stock, precios)", () => {
+  /** Sin columna de nombre ni de teléfono no hay forma de saber si dos
+   *  filas son "la misma persona" — pero sí de ver la fila repetida. */
+  const catalogo: Preset = {
+    slug: "catalogo",
+    nombre: "Catálogo",
+    rubro: "Comercio",
+    gancho: "",
+    columnas: [
+      { clave: "sku", titulo: "Código", tipo: "texto" },
+      { clave: "desc", titulo: "Descripción", tipo: "texto" },
+      { clave: "stock", titulo: "Stock", tipo: "numero" },
+      { clave: "precio", titulo: "Precio", tipo: "moneda" },
+      { clave: "activo", titulo: "¿Activo?", tipo: "siNo" },
+    ],
+    filas: [
+      { sku: "A-100", desc: "Collar chico", stock: "12", precio: "$ 8.500", activo: "SI" },
+      { sku: "A-101", desc: "Collar  mediano ", stock: "1.200", precio: "8500", activo: "x" },
+      { sku: "A-100", desc: "Collar chico", stock: "12", precio: "$ 8.500", activo: "SI" },
+      { sku: "A-102", desc: "Correa larga", stock: "0", precio: "$ 12.000", activo: "NO" },
+      { sku: "A-103", desc: "Pipeta", stock: "45", precio: "$ 3.200", activo: "-" },
+    ],
+  };
+
+  const r = limpiar(catalogo);
+
+  it("detecta la fila repetida aunque no haya ni nombre ni teléfono", () => {
+    expect(r.conteos.filasIdenticas).toBe(1);
+    expect(r.filas).toHaveLength(4);
+  });
+
+  it("unifica los Sí/No escritos de cinco formas", () => {
+    const valores = r.filas.map((f) => f.celdas.activo.valor);
+    expect(new Set(valores)).toEqual(new Set(["Sí", "No"]));
+    expect(r.conteos.siNoUnificados).toBeGreaterThan(0);
+  });
+
+  it("encuentra los espacios invisibles que rompen los BUSCARV", () => {
+    expect(r.conteos.espaciosCorregidos).toBe(1); // "Collar  mediano ": doble en el medio y uno al final
+    const fila = r.filas.find((f) => /mediano/.test(f.celdas.desc.valor));
+    expect(fila?.celdas.desc.valor).toBe("Collar mediano");
+    expect(fila?.celdas.desc.cambio).toBe(true);
+  });
+
+  it("uniforma números y precios cargados como texto", () => {
+    const fila = r.filas.find((f) => f.celdas.sku.valor === "A-101");
+    expect(fila?.celdas.stock.valor).toBe("1.200");
+    expect(fila?.celdas.precio.valor).toBe("$ 8.500");
+  });
+
+  it("siempre encuentra algo: nunca muestra la planilla como perfecta", () => {
+    const hallazgos = Object.values(r.conteos).reduce((a, b) => a + b, 0);
+    expect(hallazgos).toBeGreaterThan(0);
+  });
+});

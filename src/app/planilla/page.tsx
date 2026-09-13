@@ -4,7 +4,7 @@ import PlanillaDemo from "@/components/PlanillaDemo";
 import { DemoBar } from "@/components/DemoBar";
 import { autorWhatsApp } from "@/lib/autor";
 
-const CONTACTO = autorWhatsApp("la muestra de limpieza de planillas");
+const CONTACTO = autorWhatsApp("la muestra de planillas");
 
 export const metadata: Metadata = {
   title: "Tu planilla, ordenada sola · Muestra",

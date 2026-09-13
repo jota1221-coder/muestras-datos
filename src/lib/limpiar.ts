@@ -111,6 +111,30 @@ function normalizarMoneda(raw: string): string | null {
   return `${moneda} ${conSeparador}`;
 }
 
+/** Sí/No cargado de todas las formas que existen en una PyME. Devuelve
+ *  null si el valor no parece un booleano, para no romper texto legítimo. */
+const SI = new Set(["si", "si.", "s", "x", "1", "true", "verdadero", "ok", "sip"]);
+const NO = new Set(["no", "n", "0", "false", "falso", "-", "--"]);
+
+export function normalizarSiNo(raw: string): string | null {
+  // Se conserva el guion: "-" es una forma habitual de escribir "no".
+  const k = sinAcentos(raw).replace(/[^a-z0-9.-]/g, "");
+  if (!k) return null;
+  if (SI.has(k)) return "Sí";
+  if (NO.has(k)) return "No";
+  return null;
+}
+
+/** Números cargados como texto, con separadores mezclados. */
+function normalizarNumero(raw: string): string | null {
+  const s = raw.trim();
+  if (!s || /[a-zA-Z]/.test(s)) return null;
+  const d = s.replace(/\./g, "").replace(",", ".");
+  const n = Number(d);
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString("es-AR");
+}
+
 function limpiarCelda(
   valorCrudo: string,
   col: Columna,
@@ -151,6 +175,18 @@ function limpiarCelda(
       if (!raw) return { valor: "" };
       const c = col.canonicos ? canonizar(raw, col.canonicos) : null;
       return { valor: c ?? capitalizar(raw) };
+    }
+
+    case "siNo": {
+      if (!raw) return { valor: "" };
+      const b = normalizarSiNo(raw);
+      return b ? { valor: b } : { valor: raw };
+    }
+
+    case "numero": {
+      if (!raw) return { valor: "" };
+      const n = normalizarNumero(raw);
+      return n ? { valor: n } : { valor: raw };
     }
 
     case "nombre":
@@ -201,6 +237,17 @@ function clavesDedupe(
     if (k) claves.push(`nom:${k}`);
   }
 
+  // Sin teléfono ni nombre no hay a qué agarrarse para saber si dos filas
+  // son "la misma persona". Pero sí se puede detectar la fila repetida
+  // carácter por carácter, que es el duplicado de cualquier planilla —
+  // incluido un catálogo o una lista de precios, donde no hay gente.
+  if (claves.length === 0) {
+    const todo = columnas
+      .map((c) => clave(celdas[c.clave]?.valor ?? ""))
+      .join("|");
+    if (todo.replace(/\|/g, "")) claves.push(`fila:${todo}`);
+  }
+
   return claves;
 }
 
@@ -213,6 +260,9 @@ export function limpiar(preset: Preset): Resultado {
     filasSinTelefono: 0,
     localidadesUnificadas: 0,
     fechasNormalizadas: 0,
+    espaciosCorregidos: 0,
+    filasIdenticas: 0,
+    siNoUnificados: 0,
   };
 
   // Paso 1 — limpiar celda por celda, guardando el original.
@@ -220,14 +270,21 @@ export function limpiar(preset: Preset): Resultado {
     const celdas: FilaLimpia["celdas"] = {};
 
     for (const col of preset.columnas) {
-      const original = (fila[col.clave] ?? "").trim();
+      // Sin trim: el valor crudo es la única forma de ver un espacio
+      // invisible al final, que es el defecto más universal de todos.
+      const original = fila[col.clave] ?? "";
       const { valor, alerta } = limpiarCelda(original, col);
       const cambio = valor !== original;
+
+      if (original !== original.trim() || /\s{2,}/.test(original)) {
+        conteos.espaciosCorregidos++;
+      }
 
       if (cambio) {
         if (col.tipo === "telefono") conteos.telefonosNormalizados++;
         if (col.tipo === "localidad") conteos.localidadesUnificadas++;
         if (col.tipo === "fecha") conteos.fechasNormalizadas++;
+        if (col.tipo === "siNo") conteos.siNoUnificados++;
       }
       if (col.tipo === "cuit" && alerta) {
         if (alerta.startsWith("Excel")) conteos.cuitRotosPorExcel++;
@@ -284,6 +341,9 @@ export function limpiar(preset: Preset): Resultado {
     }
     previa.absorbio.push(fila.indiceOriginal);
     conteos.duplicadosUnificados++;
+    if (claves.length === 1 && claves[0].startsWith("fila:")) {
+      conteos.filasIdenticas++;
+    }
     indexar(previa);
   }
 

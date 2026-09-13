@@ -6,6 +6,8 @@
 
 export type TipoColumna =
   | "texto"
+  | "siNo"
+  | "numero"
   | "nombre"
   | "telefono"
   | "cuit"
@@ -70,6 +72,15 @@ export type Conteos = {
   filasSinTelefono: number;
   localidadesUnificadas: number;
   fechasNormalizadas: number;
+  /** Espacios invisibles al final o dobles en el medio. Rompen los
+   *  BUSCARV y los filtros, y nadie los ve nunca. Aplica a cualquier
+   *  planilla, sea de gente o de cosas. */
+  espaciosCorregidos: number;
+  /** Filas enteras repetidas carácter por carácter. Es el duplicado que
+   *  se puede detectar aunque la planilla no tenga ni nombre ni teléfono. */
+  filasIdenticas: number;
+  /** Sí/No escritos de varias formas ("SI", "x", "1", "verdadero"). */
+  siNoUnificados: number;
 };
 
 export type Resultado = {
