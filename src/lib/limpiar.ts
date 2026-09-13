@@ -56,17 +56,26 @@ function formatearTelefono(d: string): string {
   return d;
 }
 
-/** Capitaliza cada palabra, respetando las minúsculas de enlace ("de",
- *  "del", "y") que en castellano no se capitalizan en el medio. */
+/** Capitaliza cada palabra, con dos excepciones que importan en nombres
+ *  argentinos: las minúsculas de enlace ("de", "del", "y") que no se
+ *  capitalizan en el medio, y las siglas societarias, que van enteras en
+ *  mayúscula — "Agro Norte Srl" se lee como un error de tipeo. */
+const MENORES = new Set(["de", "del", "la", "las", "los", "y", "en"]);
+const SIGLAS = new Set([
+  "srl", "s.r.l.", "sa", "s.a.", "sas", "s.a.s.", "sh", "s.h.",
+  "sacif", "saic", "scs", "ss",
+]);
+
 function capitalizar(s: string): string {
-  const menores = new Set(["de", "del", "la", "las", "los", "y", "en"]);
   return s
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
-    .map((p, i) =>
-      i > 0 && menores.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1),
-    )
+    .map((p, i) => {
+      if (SIGLAS.has(p)) return p.toUpperCase();
+      if (i > 0 && MENORES.has(p)) return p;
+      return p.charAt(0).toUpperCase() + p.slice(1);
+    })
     .join(" ");
 }
 

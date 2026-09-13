@@ -251,3 +251,32 @@ describe("nunca unifica dos cosas distintas por su cuenta", () => {
     expect(ninguna).toHaveLength(4); // no se borra nada
   });
 });
+
+describe("nombres de empresas argentinas", () => {
+  const conSiglas: Preset = {
+    slug: "siglas",
+    nombre: "Clientes",
+    rubro: "Mayorista",
+    gancho: "",
+    columnas: [
+      { clave: "razon", titulo: "Razón social", tipo: "nombre", clavePara: "dedupe" },
+      { clave: "tel", titulo: "Teléfono", tipo: "telefono" },
+    ],
+    filas: [
+      { razon: "AGRO NORTE SRL", tel: "11 4047-0801" },
+      { razon: "distribuidora del sur sa", tel: "11 4047-0802" },
+      { razon: "LA CASA DE LAS SEMILLAS", tel: "11 4047-0803" },
+    ],
+  };
+
+  const f = limpiar(conSiglas).filas;
+
+  it("no convierte las siglas societarias en palabras", () => {
+    expect(f[0].celdas.razon.valor).toBe("Agro Norte SRL");
+    expect(f[1].celdas.razon.valor).toBe("Distribuidora del Sur SA");
+  });
+
+  it("mantiene en minúscula los enlaces del medio", () => {
+    expect(f[2].celdas.razon.valor).toBe("La Casa de las Semillas");
+  });
+});
