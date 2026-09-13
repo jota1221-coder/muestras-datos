@@ -1,0 +1,132 @@
+import { describe, expect, it } from "vitest";
+import { limpiar } from "./limpiar";
+import { propiedades } from "./planillas/propiedades";
+import { PRESETS } from "./planillas";
+import { cuitValido } from "./normalizar";
+import type { Preset } from "./planillas/tipos";
+
+const res = limpiar(propiedades);
+const porDireccion = (d: string) =>
+  res.filas.find((f) => f.celdas.direccion.valor.toLowerCase().includes(d));
+
+describe("limpieza de la planilla de propiedades", () => {
+  it("fusiona las filas duplicadas y deja menos filas de las que entraron", () => {
+    expect(propiedades.filas).toHaveLength(15);
+    // 4 duplicados: Maipú 2847, Paraná 1290, Ader 455, Roca 812
+    expect(res.conteos.duplicadosUnificados).toBe(4);
+    expect(res.filas).toHaveLength(11);
+  });
+
+  it("normaliza los cuatro formatos de teléfono al mismo valor", () => {
+    const maipu = porDireccion("maipú 2847");
+    expect(maipu?.celdas.telefono.valor).toBe("+54 9 11 4047-0012");
+
+    const parana = porDireccion("paraná 1290");
+    expect(parana?.celdas.telefono.valor).toBe("+54 9 11 4047-0034");
+
+    const salta = porDireccion("salta 77");
+    expect(salta?.celdas.telefono.valor).toBe("+54 9 11 4047-0111");
+  });
+
+  it("al fusionar, completa el teléfono que faltaba en la fila que ganó", () => {
+    // Roca 812 entró sin teléfono; su duplicado sí lo traía.
+    const roca = porDireccion("roca 812");
+    expect(roca?.celdas.telefono.valor).toBe("+54 9 11 4047-0201");
+    expect(roca?.absorbio).toContain(15);
+  });
+
+  it("al fusionar, reemplaza el teléfono dudoso por el completo", () => {
+    // Ader 455 entró como "4047-0056", sin característica; el duplicado
+    // traía el número entero. Tiene que ganar el bueno.
+    const ader = porDireccion("ader 455");
+    expect(ader?.celdas.telefono.valor).toBe("+54 9 11 4047-0056");
+    expect(ader?.celdas.telefono.alerta).toBeUndefined();
+  });
+
+  it("marca el CUIT con dígito verificador inválido sin descartarlo", () => {
+    const ader = porDireccion("ader 455");
+    expect(ader?.celdas.cuit.valor).toBe("30-71234567-8");
+    expect(ader?.celdas.cuit.alerta).toBe("Dígito verificador inválido");
+    expect(res.conteos.cuitInvalidos).toBe(1);
+    expect(res.conteos.cuitRotosPorExcel).toBe(1);
+  });
+
+  it("recupera el CUIT que Excel pasó a notación científica", () => {
+    const libertador = porDireccion("libertador 15200");
+    expect(libertador?.celdas.cuit.valor).toBe("30-71230000-0");
+    // No se lo hace pasar por dato bueno: Excel ya se comió dígitos.
+    expect(libertador?.celdas.cuit.alerta).toBe("Excel lo rompió — verificar");
+  });
+
+  it("unifica las grafías de localidad contra la lista canónica", () => {
+    expect(porDireccion("maipú 2847")?.celdas.localidad.valor).toBe("Martínez");
+    expect(porDireccion("maipú 3100")?.celdas.localidad.valor).toBe("Martínez");
+    expect(porDireccion("paraná 1290")?.celdas.localidad.valor).toBe("Vicente López");
+    expect(porDireccion("ader 455")?.celdas.localidad.valor).toBe("Vicente López");
+    expect(porDireccion("salta 77")?.celdas.localidad.valor).toBe("Vicente López");
+    expect(porDireccion("libertador 14050")?.celdas.localidad.valor).toBe("Acassuso");
+  });
+
+  it("lleva todas las fechas a ISO, vengan como vengan", () => {
+    expect(porDireccion("maipú 2847")?.celdas.publicado.valor).toBe("2026-03-12");
+    expect(porDireccion("ader 455")?.celdas.publicado.valor).toBe("2026-02-18");
+    expect(porDireccion("roca 812")?.celdas.publicado.valor).toBe("2026-01-22");
+  });
+
+  it("uniforma los precios mezclados", () => {
+    expect(porDireccion("maipú 2847")?.celdas.precio.valor).toBe("USD 185.000");
+    expect(porDireccion("25 de mayo")?.celdas.precio.valor).toBe("$ 98.500.000");
+  });
+
+  it("guarda el valor original de cada celda que tocó", () => {
+    const maipu = porDireccion("maipú 2847");
+    expect(maipu?.celdas.telefono.original).toBe("11 4047-0012");
+    expect(maipu?.celdas.telefono.cambio).toBe(true);
+    // Una celda que ya estaba bien no se marca como cambiada.
+    expect(maipu?.celdas.direccion.cambio).toBe(false);
+  });
+
+  it("no explota con una planilla vacía", () => {
+    const vacio: Preset = { ...propiedades, filas: [] };
+    const r = limpiar(vacio);
+    expect(r.filas).toHaveLength(0);
+    expect(r.conteos.duplicadosUnificados).toBe(0);
+  });
+});
+
+describe("los tres presets", () => {
+  it.each(PRESETS.map((p) => [p.rubro, p] as const))(
+    "%s: limpia sin romperse y encuentra algo que arreglar",
+    (_rubro, preset) => {
+      const r = limpiar(preset);
+
+      // Siempre tiene que quedar menos de lo que entró: si un preset no
+      // tiene duplicados, la muestra no muestra nada.
+      expect(r.filas.length).toBeLessThan(preset.filas.length);
+      expect(r.conteos.duplicadosUnificados).toBeGreaterThan(0);
+      expect(r.conteos.telefonosNormalizados).toBeGreaterThan(0);
+
+      // Ninguna fila puede quedar sin su clave principal.
+      for (const fila of r.filas) {
+        const primera = preset.columnas[0].clave;
+        expect(fila.celdas[primera].valor).not.toBe("");
+      }
+    },
+  );
+
+  it("ningún preset deja pasar un CUIT inválido sin marcarlo", () => {
+    for (const preset of PRESETS) {
+      const r = limpiar(preset);
+      const colCuit = preset.columnas.find((c) => c.tipo === "cuit");
+      if (!colCuit) continue;
+      for (const fila of r.filas) {
+        const celda = fila.celdas[colCuit.clave];
+        if (!celda.valor) continue;
+        const digitos = celda.valor.replace(/\D/g, "");
+        if (digitos.length === 11 && !cuitValido(digitos)) {
+          expect(celda.alerta).toBeTruthy();
+        }
+      }
+    }
+  });
+});

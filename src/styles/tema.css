@@ -1,0 +1,192 @@
+/* Tema de las muestras de datos.
+ *
+ * Es una HERRAMIENTA, no una pieza de marketing: papel, tinta y una sola
+ * señal de color por tipo de hallazgo. El azul corporativo sería el default
+ * de cualquiera para "datos" — se evita a propósito. */
+
+:root {
+  color-scheme: light;
+  --ease-organic: cubic-bezier(0.25, 1, 0.5, 1);
+
+  --bg: #FBFBFA;
+  --bg-alt: #F2F2EF;
+  --fg: #1C1C1A;
+  --fg-muted: #63635E;
+
+  --accent: #1C1C1A;
+  --accent-soft: #4A4A45;
+  --accent-ink: #1C1C1A;
+  --accent-fg: #FBFBFA;
+  --accent-glow: rgba(28, 28, 26, 0.1);
+  --sweep: rgba(255, 255, 255, 0.28);
+
+  --card-bg: #FFFFFF;
+  --card-bg-hover: #FFFFFF;
+  --hairline: rgba(28, 28, 26, 0.12);
+  --hairline-strong: rgba(28, 28, 26, 0.3);
+
+  /* Señales. Verificadas contra AA sobre el fondo de su propia celda. */
+  --cambio: #8A5A00;
+  --cambio-bg: #FDF6E7;
+  --alerta: #A32318;
+  --alerta-bg: #FDEEEC;
+  --ok: #1F6B3B;
+
+  --photo-veil: rgba(28, 28, 26, 0.4);
+  --photo-filter: none;
+  --photo-filter-hover: none;
+}
+
+.font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* ── Tabla de planilla ─────────────────────────────────────────── */
+
+.tabla-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  background: var(--card-bg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabla {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  font-size: 13px;
+}
+
+.tabla th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-alt);
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--fg-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline-strong);
+  white-space: nowrap;
+}
+
+.tabla td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.tabla tbody tr:hover td {
+  background: var(--bg-alt);
+}
+
+/* Número de fila, fuera del contenido */
+.tabla .num {
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-align: right;
+  width: 1%;
+  user-select: none;
+}
+
+/* Celda que el motor tocó */
+.celda-cambio {
+  background: var(--cambio-bg);
+}
+
+.valor-viejo {
+  display: block;
+  color: var(--fg-muted);
+  text-decoration: line-through;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* Celda con advertencia: se corrigió a medias o hay que mirarla */
+.celda-alerta {
+  background: var(--alerta-bg);
+}
+
+.nota-alerta {
+  display: block;
+  color: var(--alerta);
+  font-size: 10.5px;
+  margin-top: 2px;
+  white-space: normal;
+  max-width: 180px;
+}
+
+/* Marca de fila fusionada */
+.badge-fusion {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  border: 1px solid var(--hairline-strong);
+  font-size: 10px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* ── Contadores del resultado ──────────────────────────────────── */
+
+.conteo {
+  border: 1px solid var(--hairline);
+  background: var(--card-bg);
+  padding: 16px 18px;
+}
+
+.conteo-num {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.conteo-label {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+
+/* ── Selector de preset ────────────────────────────────────────── */
+
+.tab {
+  padding: 9px 16px;
+  border: 1px solid var(--hairline-strong);
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab { transition: none; }
+}
