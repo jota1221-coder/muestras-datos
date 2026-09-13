@@ -4,6 +4,11 @@
  *  Date.now(), sin DOM — así corre igual en el browser (que es donde vive
  *  esta muestra) y en un test.
  *
+ *  Regla de fondo: el motor NUNCA borra una fila por su cuenta. Propone
+ *  fusiones y las aplica quien mira. Dos productos pueden llamarse igual y
+ *  medir distinto; dos personas pueden llamarse igual y ser dos personas.
+ *  Unificar en silencio destruye datos que después no se recuperan.
+ *
  *  Las funciones de normalización de teléfono y CUIT no se reimplementan:
  *  vienen de `normalizar.ts`, que es el mismo código que corre en
  *  producción en el CRM sobre +17.000 contactos reales. */
@@ -15,6 +20,7 @@ import type {
   Columna,
   Conteos,
   FilaLimpia,
+  Fusion,
   Preset,
   Resultado,
 } from "./planillas/tipos";
@@ -97,18 +103,16 @@ function normalizarFecha(raw: string): string | null {
 }
 
 /** Precios cargados con separadores mezclados: "U$S 185.000", "185000",
- *  "$ 185.000,00". Devuelve solo el número, sin decidir la moneda. */
+ *  "$ 185.000,00". */
 function normalizarMoneda(raw: string): string | null {
   const s = raw.trim();
   if (!s) return null;
   const moneda = /u\$s|usd|dolar/i.test(s) ? "USD" : "$";
   const soloNum = s.replace(/[^\d,.]/g, "");
-  // Si tiene coma decimal al final la sacamos; los puntos son de miles.
   const sinDecimales = soloNum.replace(/,\d{1,2}$/, "");
   const digitos = sinDecimales.replace(/\D/g, "");
   if (!digitos) return null;
-  const conSeparador = Number(digitos).toLocaleString("es-AR");
-  return `${moneda} ${conSeparador}`;
+  return `${moneda} ${Number(digitos).toLocaleString("es-AR")}`;
 }
 
 /** Sí/No cargado de todas las formas que existen en una PyME. Devuelve
@@ -129,8 +133,7 @@ export function normalizarSiNo(raw: string): string | null {
 function normalizarNumero(raw: string): string | null {
   const s = raw.trim();
   if (!s || /[a-zA-Z]/.test(s)) return null;
-  const d = s.replace(/\./g, "").replace(",", ".");
-  const n = Number(d);
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
   if (!Number.isFinite(n)) return null;
   return n.toLocaleString("es-AR");
 }
@@ -161,7 +164,7 @@ function limpiarCelda(
       const formateado = `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`;
       // Si venía en notación científica, Excel ya se comió los dígitos de
       // la derecha: se recupera lo que se puede y se avisa que hay que
-      // chequearlo contra el papel. No se lo hace pasar por dato bueno.
+      // chequearlo. No se lo hace pasar por dato bueno.
       if (eraCientifica) {
         return { valor: formateado, alerta: "Excel lo rompió — verificar" };
       }
@@ -210,23 +213,20 @@ function limpiarCelda(
   }
 }
 
-/** Claves por las que una fila puede reconocerse como repetida: el
- *  teléfono normalizado y el nombre sin acentos ni mayúsculas.
- *
- *  Devuelve TODAS las que apliquen, no la primera. Con una sola clave por
- *  fila el duplicado se escapa en el caso más común: una fila trae el
- *  teléfono entero y la otra lo trae sin característica, así que una se
- *  indexa por teléfono y la otra por nombre y no se cruzan nunca. */
+/** Claves por las que dos filas pueden ser la misma. Devuelve TODAS las
+ *  que apliquen, no la primera: con una sola clave el duplicado se escapa
+ *  en el caso más común —una fila trae el teléfono entero y la otra sin
+ *  característica— porque cada una se indexa por un lado distinto. */
 function clavesDedupe(
   celdas: Record<string, { valor: string }>,
   columnas: Columna[],
-): string[] {
-  const claves: string[] = [];
+): { clave: string; motivo: string }[] {
+  const claves: { clave: string; motivo: string }[] = [];
 
   const colTel = columnas.find((c) => c.tipo === "telefono");
   if (colTel) {
     const tel = normalizarWhatsapp(celdas[colTel.clave]?.valor ?? "");
-    if (tel.length >= 12) claves.push(`tel:${tel}`);
+    if (tel.length >= 12) claves.push({ clave: `tel:${tel}`, motivo: "mismo teléfono" });
   }
 
   const colNombre = columnas.find(
@@ -234,21 +234,43 @@ function clavesDedupe(
   );
   if (colNombre) {
     const k = clave(celdas[colNombre.clave]?.valor ?? "");
-    if (k) claves.push(`nom:${k}`);
+    if (k) claves.push({ clave: `nom:${k}`, motivo: "mismo nombre" });
   }
 
   // Sin teléfono ni nombre no hay a qué agarrarse para saber si dos filas
-  // son "la misma persona". Pero sí se puede detectar la fila repetida
-  // carácter por carácter, que es el duplicado de cualquier planilla —
-  // incluido un catálogo o una lista de precios, donde no hay gente.
+  // son "la misma". Pero sí se puede ver la fila repetida carácter por
+  // carácter, que es el duplicado de cualquier planilla — incluido un
+  // catálogo, donde no hay personas.
   if (claves.length === 0) {
-    const todo = columnas
-      .map((c) => clave(celdas[c.clave]?.valor ?? ""))
-      .join("|");
-    if (todo.replace(/\|/g, "")) claves.push(`fila:${todo}`);
+    const todo = columnas.map((c) => clave(celdas[c.clave]?.valor ?? "")).join("|");
+    if (todo.replace(/\|/g, "")) {
+      claves.push({ clave: `fila:${todo}`, motivo: "fila idéntica" });
+    }
   }
 
   return claves;
+}
+
+/** Busca un dato que CONTRADIGA que dos filas sean la misma cosa.
+ *
+ *  Es la protección contra el error más caro de una limpieza: dos clientes
+ *  que se llaman igual y tienen CUIT distinto son dos clientes. Si aparece
+ *  una contradicción así, la fusión se propone igual —para que se vea—
+ *  pero sugerida en NO. */
+function buscarConflicto(
+  a: FilaLimpia,
+  b: FilaLimpia,
+  columnas: Columna[],
+): string | undefined {
+  for (const col of columnas) {
+    if (col.tipo !== "cuit" && col.tipo !== "email") continue;
+    const va = a.celdas[col.clave]?.valor?.trim();
+    const vb = b.celdas[col.clave]?.valor?.trim();
+    if (va && vb && clave(va) !== clave(vb)) {
+      return `${col.titulo} distinto: ${va} vs ${vb}`;
+    }
+  }
+  return undefined;
 }
 
 export function limpiar(preset: Preset): Resultado {
@@ -266,7 +288,7 @@ export function limpiar(preset: Preset): Resultado {
   };
 
   // Paso 1 — limpiar celda por celda, guardando el original.
-  const intermedias: FilaLimpia[] = preset.filas.map((fila, i) => {
+  const filas: FilaLimpia[] = preset.filas.map((fila, i) => {
     const celdas: FilaLimpia["celdas"] = {};
 
     for (const col of preset.columnas) {
@@ -298,54 +320,98 @@ export function limpiar(preset: Preset): Resultado {
     return { indiceOriginal: i + 1, celdas, absorbio: [] };
   });
 
-  // Paso 2 — fusionar duplicados. Gana la primera aparición, pero cada
-  // celda vacía se completa con lo que traiga la fila absorbida: así la
-  // fusión suma información en vez de descartarla.
+  // Paso 2 — PROPONER fusiones. Acá no se borra ni se une nada.
   const porClave = new Map<string, FilaLimpia>();
-  const finales: FilaLimpia[] = [];
+  const fusiones: Fusion[] = [];
 
-  /** Registra la fila bajo todas sus claves actuales. Se vuelve a llamar
-   *  después de cada fusión porque al completarse un teléfono aparece una
-   *  clave nueva por la que antes no era encontrable. */
-  const indexar = (fila: FilaLimpia) => {
-    for (const k of clavesDedupe(fila.celdas, preset.columnas)) {
-      if (!porClave.has(k)) porClave.set(k, fila);
-    }
-  };
-
-  for (const fila of intermedias) {
+  for (const fila of filas) {
     const claves = clavesDedupe(fila.celdas, preset.columnas);
-    const previa = claves.map((k) => porClave.get(k)).find(Boolean);
+    const encontrada = claves.find((k) => porClave.has(k.clave));
 
-    if (!previa) {
-      indexar(fila);
-      finales.push(fila);
+    if (!encontrada) {
+      for (const k of claves) if (!porClave.has(k.clave)) porClave.set(k.clave, fila);
       continue;
     }
 
-    for (const col of preset.columnas) {
-      const actual = previa.celdas[col.clave];
-      const entrante = fila.celdas[col.clave];
-      if (!entrante.valor) continue;
+    const previa = porClave.get(encontrada.clave)!;
+    const conflicto = buscarConflicto(previa, fila, preset.columnas);
+    const yaPropuesta = fusiones.find(
+      (f) => f.principal === previa.indiceOriginal && !f.conflicto,
+    );
 
-      // Se completa un hueco, o se reemplaza un dato marcado como dudoso
-      // por uno sano. Quedarse siempre con el primero perdería el teléfono
-      // completo de la fila duplicada cuando el primero venía sin
-      // característica — que es justo el caso que más aparece.
-      const completaHueco = !actual.valor;
-      const mejoraCalidad = Boolean(actual.alerta) && !entrante.alerta;
+    if (yaPropuesta && !conflicto) {
+      yaPropuesta.absorbidas.push(fila.indiceOriginal);
+    } else {
+      fusiones.push({
+        id: `f${previa.indiceOriginal}-${fila.indiceOriginal}`,
+        principal: previa.indiceOriginal,
+        absorbidas: [fila.indiceOriginal],
+        motivo: encontrada.motivo,
+        conflicto,
+        // Con un dato que las contradice, la sugerencia es NO unificar.
+        sugerida: !conflicto,
+      });
+    }
 
-      if (completaHueco || mejoraCalidad) {
-        previa.celdas[col.clave] = { ...entrante, cambio: true };
-      }
+    if (!conflicto) {
+      conteos.duplicadosUnificados++;
+      if (encontrada.motivo === "fila idéntica") conteos.filasIdenticas++;
+      for (const k of claves) if (!porClave.has(k.clave)) porClave.set(k.clave, previa);
     }
-    previa.absorbio.push(fila.indiceOriginal);
-    conteos.duplicadosUnificados++;
-    if (claves.length === 1 && claves[0].startsWith("fila:")) {
-      conteos.filasIdenticas++;
-    }
-    indexar(previa);
   }
 
-  return { filas: finales, conteos };
+  return { filas, fusiones, conteos };
+}
+
+/** Aplica solo las fusiones aceptadas. Va separada del motor a propósito:
+ *  el visitante prende y apaga cada una y esto se recalcula, sin volver a
+ *  limpiar nada. */
+export function aplicarFusiones(
+  resultado: Resultado,
+  columnas: Columna[],
+  aceptadas: Set<string>,
+): FilaLimpia[] {
+  const original = new Map(resultado.filas.map((f) => [f.indiceOriginal, f]));
+
+  const clon = (f: FilaLimpia): FilaLimpia => ({
+    ...f,
+    celdas: Object.fromEntries(
+      Object.entries(f.celdas).map(([k, v]) => [k, { ...v }]),
+    ),
+    absorbio: [],
+  });
+
+  const salida = new Map(resultado.filas.map((f) => [f.indiceOriginal, clon(f)]));
+  const absorbidas = new Set<number>();
+
+  for (const fusion of resultado.fusiones) {
+    if (!aceptadas.has(fusion.id)) continue;
+    const principal = salida.get(fusion.principal);
+    if (!principal) continue;
+
+    for (const idx of fusion.absorbidas) {
+      const otra = original.get(idx);
+      if (!otra) continue;
+
+      for (const col of columnas) {
+        const actual = principal.celdas[col.clave];
+        const entrante = otra.celdas[col.clave];
+        if (!entrante?.valor) continue;
+
+        // Se completa un hueco, o se reemplaza un dato dudoso por uno sano.
+        // Quedarse siempre con el primero perdería el teléfono completo de
+        // la fila duplicada cuando el primero vino sin característica, que
+        // es justo el caso que más aparece.
+        const completaHueco = !actual.valor;
+        const mejoraCalidad = Boolean(actual.alerta) && !entrante.alerta;
+        if (completaHueco || mejoraCalidad) {
+          principal.celdas[col.clave] = { ...entrante, cambio: true };
+        }
+      }
+      principal.absorbio.push(idx);
+      absorbidas.add(idx);
+    }
+  }
+
+  return [...salida.values()].filter((f) => !absorbidas.has(f.indiceOriginal));
 }

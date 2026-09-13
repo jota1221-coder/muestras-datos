@@ -83,7 +83,29 @@ export type Conteos = {
   siNoUnificados: number;
 };
 
+/** Una fusión PROPUESTA, no aplicada. El motor nunca borra una fila por
+ *  su cuenta: dos productos pueden llamarse igual y medir distinto, y dos
+ *  personas pueden llamarse igual y ser dos personas. Quien decide es el
+ *  dueño, que es el único que sabe. */
+export type Fusion = {
+  id: string;
+  /** Fila que queda (por índice original). */
+  principal: number;
+  /** Filas que se absorberían. */
+  absorbidas: number[];
+  /** Por qué se parecen: "mismo teléfono", "mismo nombre". */
+  motivo: string;
+  /** Dato que las contradice y que hace dudar de que sean la misma.
+   *  Si existe, la fusión viene sugerida en NO. */
+  conflicto?: string;
+  /** Si conviene aceptarla por defecto. */
+  sugerida: boolean;
+};
+
 export type Resultado = {
+  /** TODAS las filas, ya limpias celda por celda, sin fusionar. */
   filas: FilaLimpia[];
+  /** Las fusiones que el motor propone. Aplicarlas es decisión de quien mira. */
+  fusiones: Fusion[];
   conteos: Conteos;
 };

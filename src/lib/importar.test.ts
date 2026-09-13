@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { ErrorImportacion, presetDesdeArchivo } from "./importar";
-import { limpiar } from "./limpiar";
+import { aplicarFusiones, limpiar } from "./limpiar";
 
 /** Arma un .xlsx de verdad en memoria y lo envuelve en un File, que es
  *  exactamente lo que recibe la función cuando alguien sube su planilla. */
@@ -47,9 +47,11 @@ describe("importar la planilla del visitante", () => {
   it("limpia un archivo subido igual que un ejemplo", async () => {
     const preset = await presetDesdeArchivo(await archivoXlsx(PLANILLA));
     const r = limpiar(preset);
+    const sug = new Set(r.fusiones.filter((f) => f.sugerida).map((f) => f.id));
+    const finales = aplicarFusiones(r, preset.columnas, sug);
 
     expect(r.conteos.duplicadosUnificados).toBe(1); // el kiosco repetido
-    expect(r.filas).toHaveLength(4);
+    expect(finales).toHaveLength(4);
     expect(r.conteos.telefonosNormalizados).toBeGreaterThan(0);
     expect(r.conteos.cuitRotosPorExcel).toBe(1); // el 3.07123E+10
   });
@@ -57,8 +59,11 @@ describe("importar la planilla del visitante", () => {
   it("deduce la grafía correcta de los propios datos, sin lista canónica", async () => {
     const preset = await presetDesdeArchivo(await archivoXlsx(PLANILLA));
     const r = limpiar(preset);
+    const sug = new Set(r.fusiones.filter((f) => f.sugerida).map((f) => f.id));
     const colLoc = preset.columnas.find((c) => c.tipo === "localidad")!;
-    const valores = r.filas.map((f) => f.celdas[colLoc.clave].valor);
+    const valores = aplicarFusiones(r, preset.columnas, sug).map(
+      (f) => f.celdas[colLoc.clave].valor,
+    );
 
     // "Martínez" aparece con tilde y mayúscula inicial una sola vez, pero
     // es la única variante con acento: gana la más frecuente del grupo.

@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { limpiar } from "./limpiar";
+import { aplicarFusiones, limpiar } from "./limpiar";
 import { propiedades } from "./planillas/propiedades";
 import { PRESETS } from "./planillas";
 import { cuitValido } from "./normalizar";
 import type { Preset } from "./planillas/tipos";
 
 const res = limpiar(propiedades);
+/** Como el motor propone y no aplica, los tests aceptan lo sugerido. */
+const sugeridas = (r: ReturnType<typeof limpiar>) =>
+  new Set(r.fusiones.filter((f) => f.sugerida).map((f) => f.id));
+const finales = aplicarFusiones(res, propiedades.columnas, sugeridas(res));
 const porDireccion = (d: string) =>
-  res.filas.find((f) => f.celdas.direccion.valor.toLowerCase().includes(d));
+  finales.find((f) => f.celdas.direccion.valor.toLowerCase().includes(d));
 
 describe("limpieza de la planilla de propiedades", () => {
   it("fusiona las filas duplicadas y deja menos filas de las que entraron", () => {
     expect(propiedades.filas).toHaveLength(15);
     // 4 duplicados: Maipú 2847, Paraná 1290, Ader 455, Roca 812
     expect(res.conteos.duplicadosUnificados).toBe(4);
-    expect(res.filas).toHaveLength(11);
+    expect(finales).toHaveLength(11);
   });
 
   it("normaliza los cuatro formatos de teléfono al mismo valor", () => {
@@ -90,6 +94,7 @@ describe("limpieza de la planilla de propiedades", () => {
     const vacio: Preset = { ...propiedades, filas: [] };
     const r = limpiar(vacio);
     expect(r.filas).toHaveLength(0);
+    expect(r.fusiones).toHaveLength(0);
     expect(r.conteos.duplicadosUnificados).toBe(0);
   });
 });
@@ -99,15 +104,16 @@ describe("los tres presets", () => {
     "%s: limpia sin romperse y encuentra algo que arreglar",
     (_rubro, preset) => {
       const r = limpiar(preset);
+      const f = aplicarFusiones(preset.columnas ? r : r, preset.columnas, sugeridas(r));
 
-      // Siempre tiene que quedar menos de lo que entró: si un preset no
-      // tiene duplicados, la muestra no muestra nada.
-      expect(r.filas.length).toBeLessThan(preset.filas.length);
+      // Aceptando lo sugerido tiene que quedar menos de lo que entró: si
+      // un preset no propone nada, la muestra no muestra nada.
+      expect(f.length).toBeLessThan(preset.filas.length);
       expect(r.conteos.duplicadosUnificados).toBeGreaterThan(0);
       expect(r.conteos.telefonosNormalizados).toBeGreaterThan(0);
 
       // Ninguna fila puede quedar sin su clave principal.
-      for (const fila of r.filas) {
+      for (const fila of f) {
         const primera = preset.columnas[0].clave;
         expect(fila.celdas[primera].valor).not.toBe("");
       }
@@ -156,27 +162,28 @@ describe("planillas que no son de gente (catálogo, stock, precios)", () => {
   };
 
   const r = limpiar(catalogo);
+  const f = aplicarFusiones(r, catalogo.columnas, sugeridas(r));
 
   it("detecta la fila repetida aunque no haya ni nombre ni teléfono", () => {
     expect(r.conteos.filasIdenticas).toBe(1);
-    expect(r.filas).toHaveLength(4);
+    expect(f).toHaveLength(4);
   });
 
   it("unifica los Sí/No escritos de cinco formas", () => {
-    const valores = r.filas.map((f) => f.celdas.activo.valor);
+    const valores = f.map((x) => x.celdas.activo.valor);
     expect(new Set(valores)).toEqual(new Set(["Sí", "No"]));
     expect(r.conteos.siNoUnificados).toBeGreaterThan(0);
   });
 
   it("encuentra los espacios invisibles que rompen los BUSCARV", () => {
     expect(r.conteos.espaciosCorregidos).toBe(1); // "Collar  mediano ": doble en el medio y uno al final
-    const fila = r.filas.find((f) => /mediano/.test(f.celdas.desc.valor));
+    const fila = f.find((x) => /mediano/.test(x.celdas.desc.valor));
     expect(fila?.celdas.desc.valor).toBe("Collar mediano");
     expect(fila?.celdas.desc.cambio).toBe(true);
   });
 
   it("uniforma números y precios cargados como texto", () => {
-    const fila = r.filas.find((f) => f.celdas.sku.valor === "A-101");
+    const fila = f.find((x) => x.celdas.sku.valor === "A-101");
     expect(fila?.celdas.stock.valor).toBe("1.200");
     expect(fila?.celdas.precio.valor).toBe("$ 8.500");
   });
@@ -184,5 +191,63 @@ describe("planillas que no son de gente (catálogo, stock, precios)", () => {
   it("siempre encuentra algo: nunca muestra la planilla como perfecta", () => {
     const hallazgos = Object.values(r.conteos).reduce((a, b) => a + b, 0);
     expect(hallazgos).toBeGreaterThan(0);
+  });
+});
+
+describe("nunca unifica dos cosas distintas por su cuenta", () => {
+  /** El caso que más caro sale: dos personas que se llaman igual. */
+  const homonimos: Preset = {
+    slug: "homonimos",
+    nombre: "Pacientes",
+    rubro: "Consultorio",
+    gancho: "",
+    columnas: [
+      { clave: "nombre", titulo: "Paciente", tipo: "nombre", clavePara: "dedupe" },
+      { clave: "dni", titulo: "DNI", tipo: "cuit" },
+      { clave: "tel", titulo: "Teléfono", tipo: "telefono" },
+    ],
+    filas: [
+      { nombre: "Juan Pérez", dni: "20-12345678-6", tel: "11 4047-0701" },
+      { nombre: "JUAN PEREZ", dni: "27-23456789-1", tel: "11 4047-0702" },
+      { nombre: "Ana Gómez", dni: "", tel: "11 4047-0703" },
+      { nombre: "ana gomez", dni: "23-34567890-5", tel: "" },
+    ],
+  };
+
+  const r = limpiar(homonimos);
+  const conflictiva = r.fusiones.find((f) => f.principal === 1);
+  const limpiaSugerida = r.fusiones.find((f) => f.principal === 3);
+
+  it("propone pero NO sugiere unificar cuando el documento se contradice", () => {
+    expect(conflictiva).toBeDefined();
+    expect(conflictiva!.conflicto).toMatch(/DNI distinto/);
+    expect(conflictiva!.sugerida).toBe(false);
+  });
+
+  it("sí sugiere unificar cuando no hay nada que lo contradiga", () => {
+    expect(limpiaSugerida).toBeDefined();
+    expect(limpiaSugerida!.conflicto).toBeUndefined();
+    expect(limpiaSugerida!.sugerida).toBe(true);
+  });
+
+  it("aceptando lo sugerido, los homónimos quedan separados", () => {
+    const f = aplicarFusiones(r, homonimos.columnas, sugeridas(r));
+    expect(f).toHaveLength(3); // los dos Juan siguen siendo dos
+    const juanes = f.filter((x) => /juan/i.test(x.celdas.nombre.valor));
+    expect(juanes).toHaveLength(2);
+  });
+
+  it("el que decide es quien mira: se puede forzar la unificación", () => {
+    const forzada = aplicarFusiones(
+      r,
+      homonimos.columnas,
+      new Set(r.fusiones.map((f) => f.id)),
+    );
+    expect(forzada).toHaveLength(2);
+  });
+
+  it("y también rechazar una que venía sugerida", () => {
+    const ninguna = aplicarFusiones(r, homonimos.columnas, new Set());
+    expect(ninguna).toHaveLength(4); // no se borra nada
   });
 });

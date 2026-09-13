@@ -2,22 +2,21 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { limpiar } from "@/lib/limpiar";
+import { aplicarFusiones, limpiar } from "@/lib/limpiar";
 import { PRESETS } from "@/lib/planillas";
 import { ErrorImportacion, presetDesdeArchivo } from "@/lib/importar";
-import type { Conteos, Preset } from "@/lib/planillas/tipos";
+import type { Conteos, Fusion, Preset } from "@/lib/planillas/tipos";
 
 /** Los contadores se arman desde el resultado y se filtran los que dieron
  *  cero: mostrar "0 duplicados" en una demo sobre limpieza es un autogol. */
-function lineasDeConteo(c: Conteos) {
+function lineasDeConteo(c: Conteos, unificadas: number) {
   return [
     { n: c.telefonosNormalizados, t: "teléfonos llevados a un formato único" },
-    { n: c.duplicadosUnificados, t: "filas duplicadas unificadas" },
+    { n: unificadas, t: "filas unificadas (las que aceptaste)" },
     { n: c.localidadesUnificadas, t: "valores escritos de otra forma" },
     { n: c.fechasNormalizadas, t: "fechas pasadas a un solo formato" },
     { n: c.cuitInvalidos, t: "CUIT con el dígito verificador mal" },
     { n: c.cuitRotosPorExcel, t: "CUIT que rompió Excel solo" },
-    { n: c.filasIdenticas, t: "filas repetidas carácter por carácter" },
     { n: c.siNoUnificados, t: "Sí/No escritos de varias formas" },
     { n: c.espaciosCorregidos, t: "celdas con espacios invisibles que rompen los BUSCARV" },
     { n: c.filasSinTelefono, t: "filas sin ningún teléfono" },
@@ -27,8 +26,7 @@ function lineasDeConteo(c: Conteos) {
 export default function PlanillaDemo() {
   /* El rubro viene en el link que se manda en frío
      (/planilla?preset=propiedades). Se lee acá y no en el servidor para que
-     la página siga siendo estática: así no depende de que una función
-     serverless despierte para pintar el primer render. */
+     la página siga siendo estática. */
   const params = useSearchParams();
   const pedido = params.get("preset") ?? "";
 
@@ -40,6 +38,10 @@ export default function PlanillaDemo() {
   const [leyendo, setLeyendo] = useState(false);
   const [limpia, setLimpia] = useState(false);
   const [bajando, setBajando] = useState(false);
+  /* Solo las decisiones que el visitante cambió a mano. El resto sale de
+     lo que el motor sugiere, que no es lo mismo para todas: una fusión con
+     un dato contradictorio viene sugerida en NO. */
+  const [decisiones, setDecisiones] = useState<Record<string, boolean>>({});
   const inputArchivo = useRef<HTMLInputElement>(null);
 
   const preset = useMemo(
@@ -48,14 +50,32 @@ export default function PlanillaDemo() {
   );
   const resultado = useMemo(() => limpiar(preset), [preset]);
 
-  const conteos = lineasDeConteo(resultado.conteos);
-  const sinHallazgos = limpia && conteos.length === 0;
+  const aceptada = (f: Fusion) => decisiones[f.id] ?? f.sugerida;
+  const idsAceptadas = useMemo(
+    () => new Set(resultado.fusiones.filter(aceptada).map((f) => f.id)),
+    [resultado, decisiones],
+  );
+  const filasFinales = useMemo(
+    () => aplicarFusiones(resultado, preset.columnas, idsAceptadas),
+    [resultado, preset, idsAceptadas],
+  );
+
+  const unificadas = resultado.fusiones
+    .filter(aceptada)
+    .reduce((a, f) => a + f.absorbidas.length, 0);
+  const conteos = lineasDeConteo(resultado.conteos, unificadas);
+  const sinHallazgos = limpia && conteos.length === 0 && resultado.fusiones.length === 0;
+
+  function reiniciar() {
+    setLimpia(false);
+    setDecisiones({});
+  }
 
   function elegirEjemplo(nuevo: string) {
     setPropia(null);
     setErrorImport("");
     setSlug(nuevo);
-    setLimpia(false);
+    reiniciar();
   }
 
   async function subir(e: React.ChangeEvent<HTMLInputElement>) {
@@ -64,9 +84,8 @@ export default function PlanillaDemo() {
     setLeyendo(true);
     setErrorImport("");
     try {
-      const nuevo = await presetDesdeArchivo(file);
-      setPropia(nuevo);
-      setLimpia(false);
+      setPropia(await presetDesdeArchivo(file));
+      reiniciar();
     } catch (err) {
       setErrorImport(
         err instanceof ErrorImportacion
@@ -75,7 +94,6 @@ export default function PlanillaDemo() {
       );
     } finally {
       setLeyendo(false);
-      // Permite volver a elegir el mismo archivo después de corregirlo.
       if (inputArchivo.current) inputArchivo.current.value = "";
     }
   }
@@ -88,11 +106,9 @@ export default function PlanillaDemo() {
       const ExcelJS = (await import("exceljs")).default;
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Limpia");
-
       ws.addRow(preset.columnas.map((c) => c.titulo));
       ws.getRow(1).font = { bold: true };
-
-      for (const fila of resultado.filas) {
+      for (const fila of filasFinales) {
         ws.addRow(preset.columnas.map((c) => fila.celdas[c.clave].valor));
       }
       ws.columns.forEach((col) => { col.width = 22; });
@@ -112,6 +128,18 @@ export default function PlanillaDemo() {
       setBajando(false);
     }
   }
+
+  /** Muestra el valor de la primera columna que identifique la fila, para
+   *  que la propuesta se entienda sin tener que ir a buscarla a la tabla. */
+  function etiqueta(indice: number) {
+    const fila = resultado.filas.find((f) => f.indiceOriginal === indice);
+    if (!fila) return `fila ${indice}`;
+    const col =
+      preset.columnas.find((c) => c.tipo === "nombre") ?? preset.columnas[0];
+    return fila.celdas[col.clave]?.valor || `fila ${indice}`;
+  }
+
+  const filasEnTabla = limpia ? filasFinales : null;
 
   return (
     <div>
@@ -155,13 +183,13 @@ export default function PlanillaDemo() {
         )}
         <span className="text-sm" style={{ color: "var(--fg-muted)" }}>
           {limpia
-            ? `${resultado.filas.length} filas · antes ${preset.filas.length}`
+            ? `${filasFinales.length} filas · antes ${preset.filas.length}`
             : `${preset.filas.length} filas como vinieron`}
         </span>
       </div>
 
       {/* Contadores */}
-      {limpia && !sinHallazgos && (
+      {limpia && conteos.length > 0 && (
         <div className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3">
           {conteos.map((l) => (
             <div key={l.t} className="conteo">
@@ -178,6 +206,59 @@ export default function PlanillaDemo() {
         </p>
       )}
 
+      {/* Posibles repetidos — se proponen, no se aplican solos */}
+      {limpia && resultado.fusiones.length > 0 && (
+        <div className="mt-8">
+          <p className="font-display text-lg">Posibles repetidos</p>
+          <p className="mt-2 text-sm leading-relaxed max-w-2xl" style={{ color: "var(--fg-muted)" }}>
+            Esto no se decide solo. Dos productos pueden llamarse igual y
+            medir distinto, y dos personas pueden llamarse igual y ser dos
+            personas. Mirá cada uno y elegís vos.
+          </p>
+
+          <div className="mt-5 grid md:grid-cols-2 gap-3">
+            {resultado.fusiones.map((f) => {
+              const si = aceptada(f);
+              return (
+                <div
+                  key={f.id}
+                  className="conteo"
+                  style={f.conflicto ? { borderColor: "var(--alerta)" } : undefined}
+                >
+                  <p className="text-sm font-semibold">{etiqueta(f.principal)}</p>
+                  <p className="mt-1 text-xs" style={{ color: "var(--fg-muted)" }}>
+                    Fila {f.principal} y {f.absorbidas.join(", ")} · {f.motivo}
+                  </p>
+
+                  {f.conflicto && (
+                    <p className="mt-2 text-xs" style={{ color: "var(--alerta)" }}>
+                      Ojo: {f.conflicto}. Probablemente sean dos distintos.
+                    </p>
+                  )}
+
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      className="tab"
+                      aria-selected={si}
+                      onClick={() => setDecisiones((d) => ({ ...d, [f.id]: true }))}
+                    >
+                      Unificar
+                    </button>
+                    <button
+                      className="tab"
+                      aria-selected={!si}
+                      onClick={() => setDecisiones((d) => ({ ...d, [f.id]: false }))}
+                    >
+                      Dejar separadas
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Tabla */}
       <div className="tabla-scroll mt-8">
         <table className="tabla font-mono">
@@ -190,8 +271,8 @@ export default function PlanillaDemo() {
             </tr>
           </thead>
           <tbody>
-            {limpia
-              ? resultado.filas.map((fila) => (
+            {filasEnTabla
+              ? filasEnTabla.map((fila) => (
                   <tr key={fila.indiceOriginal}>
                     <td className="num">{fila.indiceOriginal}</td>
                     {preset.columnas.map((c, i) => {
@@ -240,7 +321,7 @@ export default function PlanillaDemo() {
 
       <p className="mt-4 text-xs" style={{ color: "var(--fg-muted)" }}>
         {limpia
-          ? "En amarillo lo que se corrigió, con el valor anterior tachado. En rojo lo que no se corrige solo y hay que mirar."
+          ? "En amarillo lo que se corrigió, con el valor anterior tachado. En rojo lo que no se corrige solo y hay que mirar. Nada se borra sin que lo aceptes."
           : propia
             ? "Tu planilla, como la subiste."
             : "Datos de ejemplo. Ninguna persona, negocio ni teléfono de esta tabla es real."}
