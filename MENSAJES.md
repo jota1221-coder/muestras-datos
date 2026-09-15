@@ -95,6 +95,30 @@ largos se leen peor. Va más corto y el link al final:
 
 ---
 
+## Qué cambió con el escáner (leer antes de mandar)
+
+La muestra ya no solo limpia: **primero dice qué entendió de la planilla y
+por qué va a hacer lo que va a hacer**, columna por columna. Eso cambia dos
+cosas en la venta:
+
+1. **El argumento deja de ser "limpio planillas" y pasa a ser "entiendo tu
+   planilla".** Cualquiera promete lo primero. Lo segundo se demuestra en
+   la pantalla: dice, por ejemplo, *"el guion aparece en 3 de 9 filas, con
+   esa frecuencia no parece otra forma de decir no sino un estado propio,
+   así que lo dejo"*. Ese nivel de detalle es lo que no puede dar ni una
+   fórmula de Excel ni un prompt.
+2. **Da consejos de estructura sin tocar nada** (columnas sin nombre, casi
+   vacías, con dos datos en la misma celda). Es lo único de la muestra que
+   el dueño puede verificar solo, mirando su planilla. Sirve para abrir la
+   conversación aunque no compre nada.
+
+**Si el prospecto duda de que funcione con SU planilla**, esa es la
+respuesta: no hay una limpieza sola para todos, la muestra escanea la que
+suba y elige. Y si se equivoca en algo, el tipo de cada columna se cambia
+a mano ahí mismo.
+
+---
+
 ## Después del "sí"
 
 Cuando contestan que sí, **no mandes el presupuesto todavía.** Pedí la
