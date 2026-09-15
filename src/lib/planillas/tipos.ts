@@ -30,6 +30,15 @@ export type Columna = {
   canonicos?: Canonico[];
   /** Si esta columna participa de la clave de deduplicación. */
   clavePara?: "dedupe";
+  /** Lo completa el escáner: los valores de la columna son únicos por
+   *  fila, así que sirve para reconocer la misma entidad. Un CUIT que se
+   *  repite a propósito (el de una empresa con varios empleados) NO es
+   *  identificador y usarlo para unificar juntaría gente distinta. */
+  esIdentificador?: boolean;
+  /** Lo completa el escáner para columnas de Sí/No: valores que NO hay
+   *  que convertir porque son un tercer estado propio de esta planilla
+   *  ("-" usado como "pendiente", por ejemplo). */
+  siNoDejar?: string[];
 };
 
 export type Preset = {

@@ -190,3 +190,76 @@
 @media (prefers-reduced-motion: reduce) {
   .tab { transition: none; }
 }
+
+/* ── Escáner: lo que se entendió de la planilla ─────────────────── */
+
+.escaneo {
+  border: 1px solid var(--hairline);
+  background: var(--bg-alt);
+  padding: 20px;
+}
+
+/* Cada columna con lo que se detectó y lo que se va a hacer con ella. */
+.col-card {
+  border: 1px solid var(--hairline);
+  background: var(--card-bg);
+  padding: 14px;
+}
+
+.col-nombre {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+/* El tipo es editable: si el escáner se equivocó, se corrige acá y se
+   rehace la limpieza. Se ve como un dato, no como un formulario. */
+.tipo-select {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tipo-select:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 1px;
+}
+
+.regla {
+  margin-top: 10px;
+  padding-left: 11px;
+  border-left: 2px solid var(--hairline-strong);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.regla b {
+  display: block;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Los consejos no modifican nada: se ven distintos a propósito. */
+.consejo {
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--cambio);
+  background: var(--card-bg);
+  padding: 13px 15px;
+}
+
+.baja-confianza {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 7px;
+  background: var(--cambio-bg);
+  color: var(--cambio);
+  font-size: 10.5px;
+  font-weight: 600;
+}

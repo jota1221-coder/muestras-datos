@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { ErrorImportacion, presetDesdeArchivo } from "./importar";
 import { aplicarFusiones, limpiar } from "./limpiar";
+import { escanear } from "./escanear";
 
 /** Arma un .xlsx de verdad en memoria y lo envuelve en un File, que es
  *  exactamente lo que recibe la función cuando alguien sube su planilla. */
@@ -107,5 +108,43 @@ describe("importar la planilla del visitante", () => {
 
     const gordo = new File([new Uint8Array(5 * 1024 * 1024)], "grande.xlsx");
     await expect(presetDesdeArchivo(gordo)).rejects.toThrow(/4 MB/);
+  });
+});
+
+/** El recorrido completo tal como pasa en la pantalla cuando alguien sube
+ *  su archivo: leer → escanear → limpiar. Lo que se prueba es que el
+ *  escaneo mande, o sea que el MISMO archivo con distinta proporción de
+ *  guiones reciba distinto tratamiento sin que nadie configure nada. */
+describe("una planilla subida se limpia según lo que el escaneo ve en ella", () => {
+  const cabecera = ["Cliente", "Entregado"];
+
+  async function subirYLimpiar(filas: string[][]) {
+    const preset = await presetDesdeArchivo(await archivoXlsx([cabecera, ...filas]));
+    const esc = escanear(preset);
+    const r = limpiar({ ...preset, columnas: esc.columnas });
+    const col = preset.columnas[1].clave;
+    return { esc, valores: r.filas.map((f) => f.celdas[col]) };
+  }
+
+  it('deja el guion quieto cuando es un estado más de la planilla', async () => {
+    const { esc, valores } = await subirYLimpiar([
+      ["Uno", "SI"], ["Dos", "si"], ["Tres", "NO"], ["Cuatro", "-"],
+      ["Cinco", "-"], ["Seis", "-"], ["Siete", "x"], ["Ocho", "SI"],
+    ]);
+    expect(esc.perfiles[1].tipo).toBe("siNo");
+    const guiones = valores.filter((v) => v.original === "-");
+    expect(guiones).toHaveLength(3);
+    for (const g of guiones) expect(g.valor).toBe("-");
+    // Lo demás sí se unifica: no es que deje de limpiar.
+    expect(valores.find((v) => v.original === "x")!.valor).toBe("Sí");
+  });
+
+  it("y lo toma como no cuando es una excepción suelta", async () => {
+    const { valores } = await subirYLimpiar([
+      ["Uno", "SI"], ["Dos", "si"], ["Tres", "NO"], ["Cuatro", "no"],
+      ["Cinco", "SI"], ["Seis", "no"], ["Siete", "x"], ["Ocho", "SI"],
+      ["Nueve", "no"], ["Diez", "SI"], ["Once", "no"], ["Doce", "-"],
+    ]);
+    expect(valores.find((v) => v.original === "-")!.valor).toBe("No");
   });
 });

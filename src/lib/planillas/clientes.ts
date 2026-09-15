@@ -28,19 +28,24 @@ export const clientes: Preset = {
     { clave: "localidad", titulo: "Localidad", tipo: "localidad", canonicos: LOCALIDADES },
     { clave: "telefono", titulo: "Teléfono", tipo: "telefono" },
     { clave: "cuit", titulo: "CUIT", tipo: "cuit" },
+    /* Dos datos en una sola celda: el nombre de quien atiende y su línea
+       directa, separados por una barra. Así no se puede filtrar por
+       persona ni mandarle un mensaje a nadie. El escáner lo aconseja
+       separar; no lo separa solo, porque el criterio lo pone el dueño. */
+    { clave: "contacto", titulo: "Persona de contacto", tipo: "texto" },
     { clave: "compra", titulo: "Última compra", tipo: "moneda" },
     { clave: "fecha", titulo: "Fecha", tipo: "fecha" },
     { clave: "pago", titulo: "¿Pagó?", tipo: "siNo" },
   ],
   filas: [
-    { razon: "Veterinaria San Martín", localidad: "Martínez", telefono: "11 4047-0203", cuit: "30-71234567-1", compra: "$ 348.500", pago: "SI", fecha: "9/3/26" },
+    { razon: "Veterinaria San Martín", localidad: "Martínez", telefono: "11 4047-0203", cuit: "30-71234567-1", contacto: "Sergio Ferreyra / 11 4047-0291", compra: "$ 348.500", pago: "SI", fecha: "9/3/26" },
     { razon: "VETERINARIA SAN MARTIN", localidad: "MARTINEZ", telefono: "+54 9 11 4047 0203", cuit: "", compra: "348500", pago: "si", fecha: "2026-03-09" },
-    { razon: "Pet Shop Los Robles", localidad: "Vte. López", telefono: "1140470215", cuit: "27-23456789-1", compra: "$ 127.900", pago: "x", fecha: "2/3/26" },
-    { razon: "Agro Norte SRL", localidad: "boulogne", telefono: "4047-0227", cuit: "3.07123E+10", compra: "$ 1.240.000", pago: "NO", fecha: "26/02/2026" },
-    { razon: "Clínica Veterinaria Del Sur", localidad: "Munro", telefono: "11 4047-0239", cuit: "20-12345678-6", compra: "$ 512.300", pago: "Sí", fecha: "2026-02-18" },
+    { razon: "Pet Shop Los Robles", localidad: "Vte. López", telefono: "1140470215", cuit: "27-23456789-1", contacto: "Natalia Quiroga / 11 4047-0292", compra: "$ 127.900", pago: "x", fecha: "2/3/26" },
+    { razon: "Agro Norte SRL", localidad: "boulogne", telefono: "4047-0227", cuit: "3.07123E+10", contacto: "Hernán Costa / 11 4047-0293", compra: "$ 1.240.000", pago: "NO", fecha: "26/02/2026" },
+    { razon: "Clínica Veterinaria Del Sur", localidad: "Munro", telefono: "11 4047-0239", cuit: "20-12345678-6", contacto: "Paula Meza / 11 4047-0294", compra: "$ 512.300", pago: "Sí", fecha: "2026-02-18" },
     { razon: "Forrajería El Trébol", localidad: "S. Isidro", telefono: "549 11 4047 0241", cuit: "", compra: "$ 89.750", pago: "1", fecha: "14/1/26" },
     { razon: "pet shop los robles", localidad: "Vicente López", telefono: "11 4047-0215", cuit: "", compra: "", pago: "no", fecha: "" },
-    { razon: "Distribuidora Aconcagua ", localidad: "Olivos ", telefono: "", cuit: "23-34567890-5", compra: "$ 675.400", pago: "X", fecha: "5/3/26" },
+    { razon: "Distribuidora Aconcagua ", localidad: "Olivos ", telefono: "", cuit: "23-34567890-5", contacto: "Marcos Aguirre", compra: "$ 675.400", pago: "X", fecha: "5/3/26" },
     { razon: "Veterinaria Patitas", localidad: "FLORIDA", telefono: "11 4047-0253", cuit: "30-71234567-8", compra: "$ 203.100", pago: "-", fecha: "2026-01-29" },
     { razon: "Agro Norte S.R.L.", localidad: "Boulogne", telefono: "11 4047-0227", cuit: "", compra: "$ 1.240.000", pago: "si ", fecha: "26/2/26" },
     { razon: "Criadero  La Loma", localidad: "Munro ", telefono: "11 4047-0265", cuit: "20-35421876-4", compra: "$ 94.600", pago: "No", fecha: "21/2/26" },

@@ -6,7 +6,7 @@
  *  archivo no sale de tu teléfono" y que sea verdad. */
 
 import { masFrecuentePorGrupo, sinAcentos } from "./texto";
-import { normalizarSiNo } from "./limpiar";
+import { detectarTipo } from "./escanear";
 import type { Canonico, Columna, Preset, TipoColumna } from "./planillas/tipos";
 
 /** Tope defensivo: una planilla enorme colgaría el celular del visitante,
@@ -40,70 +40,6 @@ function texto(v: unknown): string {
 }
 
 const norm = (s: string) => sinAcentos(s).replace(/[^a-z0-9]/g, "");
-
-/** Adivina qué es cada columna. Primero por el nombre del encabezado, que
- *  es lo que acierta casi siempre; si el encabezado no dice nada, se mira
- *  el contenido. */
-const POR_ENCABEZADO: [RegExp, TipoColumna][] = [
-  [/^(tel|cel|whats|movil|contacto|fono)/, "telefono"],
-  [/(cuit|cuil|dni|documento)/, "cuit"],
-  [/(mail|correo)/, "email"],
-  [/(fecha|alta|visita|compra|publicad|vencim|ingreso)/, "fecha"],
-  [/(precio|monto|importe|total|valor|saldo|deuda)/, "moneda"],
-  [/(localidad|ciudad|zona|barrio|partido|sucursal|obrasocial|cobertura)/, "localidad"],
-  [/(nombre|razon|cliente|paciente|propietario|apellido|titular|empresa)/, "nombre"],
-  [/(pago|pagado|entregado|activo|vigente|confirmad|cobrado|enviado|abonado)/, "siNo"],
-  [/(cantidad|stock|unidades|cant|edad|kilos|litros)/, "numero"],
-];
-
-/** Proporción de valores no vacíos que cumplen una condición. */
-function proporcion(valores: string[], cumple: (v: string) => boolean): number {
-  const llenos = valores.filter(Boolean);
-  if (llenos.length < 3) return 0;
-  return llenos.filter(cumple).length / llenos.length;
-}
-
-const pareceTelefono = (v: string) => {
-  if (/[a-zA-Z]/.test(v)) return false;
-  const d = v.replace(/\D/g, "");
-  return d.length >= 8 && d.length <= 13;
-};
-
-const pareceFecha = (v: string) =>
-  /^\d{4}-\d{1,2}-\d{1,2}$/.test(v.trim()) ||
-  /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(v.trim());
-
-const pareceMoneda = (v: string) => /^[^\d]*(\$|u\$s|usd)/i.test(v.trim());
-
-const pareceSiNo = (v: string) => normalizarSiNo(v) !== null;
-
-const pareceNumero = (v: string) => {
-  const t = v.trim();
-  if (!t || /[a-zA-Z]/.test(t)) return false;
-  const d = t.replace(/[.,]/g, "");
-  // Se excluye el largo de un teléfono para no pisar esa detección.
-  return /^\d+$/.test(d) && d.length < 8;
-};
-
-/** Adivina qué es cada columna. El encabezado acierta casi siempre, pero
- *  nunca alcanza solo: en una planilla ajena aparecen títulos que no se
- *  pueden anticipar ("Último pedido", "Dato 2"). Por eso, cuando el nombre
- *  no dice nada, se mira el contenido — que es la única fuente que no
- *  depende de cómo se le ocurrió llamarla al dueño. */
-function tipoDeColumna(encabezado: string, valores: string[]): TipoColumna {
-  const n = norm(encabezado);
-  for (const [re, tipo] of POR_ENCABEZADO) {
-    if (re.test(n)) return tipo;
-  }
-  // Sí/No primero: acepta muy pocos valores distintos, así que cuando da
-  // alto es casi seguro, y si no se chequea antes cae en "texto".
-  if (proporcion(valores, pareceSiNo) >= 0.8) return "siNo";
-  if (proporcion(valores, pareceFecha) >= 0.6) return "fecha";
-  if (proporcion(valores, pareceMoneda) >= 0.6) return "moneda";
-  if (proporcion(valores, pareceTelefono) >= 0.6) return "telefono";
-  if (proporcion(valores, pareceNumero) >= 0.8) return "numero";
-  return "texto";
-}
 
 /** Para un archivo subido no hay lista canónica posible: se deduce de los
  *  propios datos quedándose, de cada grupo que solo difiere en acentos o
@@ -185,7 +121,7 @@ export async function presetDesdeArchivo(file: File): Promise<Preset> {
 
   const columnas: Columna[] = encabezados.map((titulo, i) => {
     const valores = cuerpo.map((f) => f[i] ?? "");
-    const tipo = tipoDeColumna(titulo, valores);
+    const { tipo } = detectarTipo(titulo, valores);
     const col: Columna = { clave: `c${i}`, titulo, tipo };
     if (tipo === "localidad") col.canonicos = canonicosDesdeDatos(valores);
     return col;

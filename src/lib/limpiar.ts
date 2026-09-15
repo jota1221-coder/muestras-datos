@@ -191,6 +191,13 @@ function limpiarCelda(
 
     case "siNo": {
       if (!raw) return { valor: "" };
+      // El escáner ya decidió, mirando la frecuencia real, qué valores de
+      // ESTA planilla son un tercer estado y no un "no" mal escrito. Un
+      // "-" que aparece en un cuarto de las filas es "pendiente", y
+      // convertirlo destruiría la información.
+      if (col.siNoDejar?.some((v) => v.trim() === raw)) {
+        return { valor: raw };
+      }
       const b = normalizarSiNo(raw);
       return b ? { valor: b } : { valor: raw };
     }
@@ -232,7 +239,12 @@ function clavesDedupe(
 ): { clave: string; motivo: string }[] {
   const claves: { clave: string; motivo: string }[] = [];
 
-  const colTel = columnas.find((c) => c.tipo === "telefono");
+  // Solo se usa el teléfono si el escáner vio que no se repite: un número
+  // compartido entre filas puede ser el de la empresa o el de la familia,
+  // y ahí "mismo teléfono" no significa "misma persona".
+  const colTel = columnas.find(
+    (c) => c.tipo === "telefono" && c.esIdentificador !== false,
+  );
   if (colTel) {
     const tel = normalizarWhatsapp(celdas[colTel.clave]?.valor ?? "");
     if (tel.length >= 12) claves.push({ clave: `tel:${tel}`, motivo: "mismo teléfono" });
@@ -273,6 +285,10 @@ function buscarConflicto(
 ): string | undefined {
   for (const col of columnas) {
     if (col.tipo !== "cuit" && col.tipo !== "email") continue;
+    // Un documento que se repite a propósito en esta planilla (el CUIT de
+    // una empresa con varios registros) no dice nada sobre si dos filas
+    // son la misma: que difiera no es una contradicción.
+    if (col.esIdentificador === false) continue;
     const va = a.celdas[col.clave]?.valor?.trim();
     const vb = b.celdas[col.clave]?.valor?.trim();
     if (va && vb && clave(va) !== clave(vb)) {

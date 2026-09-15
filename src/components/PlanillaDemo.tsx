@@ -3,9 +3,25 @@
 import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { aplicarFusiones, limpiar } from "@/lib/limpiar";
+import { escanear } from "@/lib/escanear";
 import { PRESETS } from "@/lib/planillas";
 import { ErrorImportacion, presetDesdeArchivo } from "@/lib/importar";
-import type { Conteos, Fusion, Preset } from "@/lib/planillas/tipos";
+import type { Conteos, Fusion, Preset, TipoColumna } from "@/lib/planillas/tipos";
+
+/** Los nombres que ve el visitante. La clave interna no le dice nada a
+ *  nadie: "siNo" es "Sí / No" y "cuit" es "CUIT o DNI". */
+const NOMBRE_TIPO: Record<TipoColumna, string> = {
+  texto: "Texto libre",
+  siNo: "Sí / No",
+  numero: "Número",
+  nombre: "Nombre",
+  telefono: "Teléfono",
+  cuit: "CUIT o DNI",
+  localidad: "Categoría que se repite",
+  fecha: "Fecha",
+  moneda: "Importe",
+  email: "Mail",
+};
 
 /** Los contadores se arman desde el resultado y se filtran los que dieron
  *  cero: mostrar "0 duplicados" en una demo sobre limpieza es un autogol. */
@@ -42,13 +58,26 @@ export default function PlanillaDemo() {
      lo que el motor sugiere, que no es lo mismo para todas: una fusión con
      un dato contradictorio viene sugerida en NO. */
   const [decisiones, setDecisiones] = useState<Record<string, boolean>>({});
+  /* Correcciones del visitante al tipo que detectó el escáner. Mandan
+     sobre la detección: el que sabe qué guarda cada columna es él. */
+  const [tiposManuales, setTiposManuales] = useState<Record<string, TipoColumna>>({});
   const inputArchivo = useRef<HTMLInputElement>(null);
 
   const preset = useMemo(
     () => propia ?? (PRESETS.find((p) => p.slug === slug) as Preset),
     [propia, slug],
   );
-  const resultado = useMemo(() => limpiar(preset), [preset]);
+
+  /* El escaneo va ANTES de limpiar y decide cómo limpiar: qué columna
+     sirve para reconocer repetidos, qué valor de Sí/No es en realidad un
+     tercer estado. Por eso el motor recibe las columnas del escaneo y no
+     las del preset. */
+  const escaneo = useMemo(() => escanear(preset, tiposManuales), [preset, tiposManuales]);
+  const columnas = escaneo.columnas;
+  const resultado = useMemo(
+    () => limpiar({ ...preset, columnas }),
+    [preset, columnas],
+  );
 
   const aceptada = (f: Fusion) => decisiones[f.id] ?? f.sugerida;
   const idsAceptadas = useMemo(
@@ -56,8 +85,8 @@ export default function PlanillaDemo() {
     [resultado, decisiones],
   );
   const filasFinales = useMemo(
-    () => aplicarFusiones(resultado, preset.columnas, idsAceptadas),
-    [resultado, preset, idsAceptadas],
+    () => aplicarFusiones(resultado, columnas, idsAceptadas),
+    [resultado, columnas, idsAceptadas],
   );
 
   const unificadas = resultado.fusiones
@@ -69,6 +98,7 @@ export default function PlanillaDemo() {
   function reiniciar() {
     setLimpia(false);
     setDecisiones({});
+    setTiposManuales({});
   }
 
   function elegirEjemplo(nuevo: string) {
@@ -106,10 +136,10 @@ export default function PlanillaDemo() {
       const ExcelJS = (await import("exceljs")).default;
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Limpia");
-      ws.addRow(preset.columnas.map((c) => c.titulo));
+      ws.addRow(columnas.map((c) => c.titulo));
       ws.getRow(1).font = { bold: true };
       for (const fila of filasFinales) {
-        ws.addRow(preset.columnas.map((c) => fila.celdas[c.clave].valor));
+        ws.addRow(columnas.map((c) => fila.celdas[c.clave].valor));
       }
       ws.columns.forEach((col) => { col.width = 22; });
 
@@ -135,7 +165,7 @@ export default function PlanillaDemo() {
     const fila = resultado.filas.find((f) => f.indiceOriginal === indice);
     if (!fila) return `fila ${indice}`;
     const col =
-      preset.columnas.find((c) => c.tipo === "nombre") ?? preset.columnas[0];
+      columnas.find((c) => c.tipo === "nombre") ?? columnas[0];
     return fila.celdas[col.clave]?.valor || `fila ${indice}`;
   }
 
@@ -187,6 +217,72 @@ export default function PlanillaDemo() {
             : `${preset.filas.length} filas como vinieron`}
         </span>
       </div>
+
+      {/* Lo que el escáner entendió, antes de tocar nada. Va plegado para
+          no empujar el botón abajo del pliegue, pero el resumen se lee
+          igual cerrado: es la primera prueba de que leyó de verdad. */}
+      <details className="escaneo mt-8">
+        <summary className="cursor-pointer select-none">
+          <span className="font-display text-lg">Lo que entendí de tu planilla</span>
+          <span className="block mt-1 text-sm" style={{ color: "var(--fg-muted)" }}>
+            {escaneo.resumen} Tocá para ver columna por columna.
+          </span>
+        </summary>
+
+        <p className="mt-5 text-sm leading-relaxed max-w-2xl" style={{ color: "var(--fg-muted)" }}>
+          No hay una limpieza única: cada planilla necesita la suya. Esto es
+          lo que detecté en la tuya y qué voy a hacer con cada columna. Si me
+          equivoqué en algo, cambialo acá y se rehace sola.
+        </p>
+
+        <div className="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {escaneo.perfiles.map((p) => (
+            <div key={p.clave} className="col-card">
+              <p className="col-nombre">{p.titulo}</p>
+
+              <label className="sr-only" htmlFor={`tipo-${p.clave}`}>
+                Qué guarda la columna {p.titulo}
+              </label>
+              <select
+                id={`tipo-${p.clave}`}
+                className="tipo-select"
+                value={p.tipo}
+                onChange={(e) =>
+                  setTiposManuales((t) => ({
+                    ...t,
+                    [p.clave]: e.target.value as TipoColumna,
+                  }))
+                }
+              >
+                {(Object.keys(NOMBRE_TIPO) as TipoColumna[]).map((t) => (
+                  <option key={t} value={t}>
+                    {NOMBRE_TIPO[t]}
+                  </option>
+                ))}
+              </select>
+
+              {p.confianza !== "alta" && (
+                <span className="baja-confianza">
+                  {p.confianza === "media" ? "Bastante seguro" : "No estoy seguro"} — {p.razon}
+                </span>
+              )}
+
+              <p className="mt-3 text-xs" style={{ color: "var(--fg-muted)" }}>
+                {p.llenas} con dato
+                {p.vacias > 0 && ` · ${p.vacias} vacía${p.vacias > 1 ? "s" : ""}`}
+                {` · ${p.distintos} valor${p.distintos === 1 ? "" : "es"} distinto${p.distintos === 1 ? "" : "s"}`}
+              </p>
+
+              {p.reglas.map((r, i) => (
+                <p key={i} className="regla">
+                  <b>{r.titulo}</b>
+                  {r.detalle}
+                </p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </details>
 
       {/* Contadores */}
       {limpia && conteos.length > 0 && (
@@ -265,7 +361,7 @@ export default function PlanillaDemo() {
           <thead>
             <tr>
               <th className="num">#</th>
-              {preset.columnas.map((c) => (
+              {columnas.map((c) => (
                 <th key={c.clave}>{c.titulo}</th>
               ))}
             </tr>
@@ -275,7 +371,7 @@ export default function PlanillaDemo() {
               ? filasEnTabla.map((fila) => (
                   <tr key={fila.indiceOriginal}>
                     <td className="num">{fila.indiceOriginal}</td>
-                    {preset.columnas.map((c, i) => {
+                    {columnas.map((c, i) => {
                       const celda = fila.celdas[c.clave];
                       const clases = celda.alerta
                         ? "celda-alerta"
@@ -306,7 +402,7 @@ export default function PlanillaDemo() {
               : preset.filas.map((fila, i) => (
                   <tr key={i}>
                     <td className="num">{i + 1}</td>
-                    {preset.columnas.map((c) => (
+                    {columnas.map((c) => (
                       <td key={c.clave}>
                         {fila[c.clave] || (
                           <span style={{ color: "var(--fg-muted)" }}>—</span>
@@ -326,6 +422,49 @@ export default function PlanillaDemo() {
             ? "Tu planilla, como la subiste."
             : "Datos de ejemplo. Ninguna persona, negocio ni teléfono de esta tabla es real."}
       </p>
+
+      {/* Consejos: son de ESTRUCTURA, no de contenido. Nada de esto se
+          toca solo — cómo se organiza la planilla lo decide el dueño.
+          Cuando no hay nada que decir, se dice: que el escáner también
+          sepa callarse es lo que hace creíble cuando habla. */}
+      {escaneo.consejos.length === 0 && (
+        <p className="mt-10 text-sm leading-relaxed max-w-2xl" style={{ color: "var(--fg-muted)" }}>
+          <strong style={{ color: "var(--fg)" }}>La planilla está bien
+          armada.</strong>{" "}
+          Las columnas tienen nombre, guardan una cosa cada una y ninguna
+          está de adorno. No tengo nada que sugerirte sobre la estructura.
+        </p>
+      )}
+
+      {escaneo.consejos.length > 0 && (
+        <div className="mt-10">
+          <p className="font-display text-lg">
+            {escaneo.consejos.length === 1
+              ? "Un consejo sobre cómo está armada"
+              : `${escaneo.consejos.length} consejos sobre cómo está armada`}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed max-w-2xl" style={{ color: "var(--fg-muted)" }}>
+            Esto no lo cambio yo: no tiene que ver con los datos sino con la
+            forma de la planilla, y esa decisión es tuya. Te lo dejo señalado.
+          </p>
+
+          <div className="mt-5 grid md:grid-cols-2 gap-3">
+            {escaneo.consejos.map((c) => (
+              <div key={c.id} className="consejo">
+                {c.columna && (
+                  <p className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>
+                    {c.columna}
+                  </p>
+                )}
+                <p className="mt-1 text-sm font-semibold">{c.titulo}</p>
+                <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                  {c.detalle}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Subir la propia */}
       <div className="mt-10 conteo">
