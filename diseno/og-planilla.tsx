@@ -4,7 +4,6 @@ import { ImageResponse } from "next/og";
    la ruta de la fuente por defecto y muere en el prerender con
    ERR_INVALID_URL. Tampoco se cargan fuentes propias por fs — acá se usa
    la que trae el runtime. */
-export const runtime = "edge";
 export const alt = "Tu planilla, ordenada sola";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

@@ -20,7 +20,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://muestras-datos.vercel.app"),
+  // La URL pública sale del entorno: las tarjetas de WhatsApp necesitan
+  // una dirección absoluta y cambia si el sitio pasa a un dominio propio.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITIO ?? "https://muestras-datos.pages.dev"),
   title: "Muestras · Datos y automatización — Joaquín Rao",
   description:
     "Ejemplos funcionando de lo que se puede hacer con la planilla que ya tenés.",
