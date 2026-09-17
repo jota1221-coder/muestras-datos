@@ -25,7 +25,7 @@ que ven les pide algo que puedan contestar.
 
 ## Inmobiliaria
 
-**Link:** `https://muestras-datos.vercel.app/planilla?preset=propiedades`
+**Link:** `https://datos.joaquinrao.com.ar/planilla?preset=propiedades`
 
 > Hola, ¿qué tal? Soy Joaquín, de Martínez.
 >
@@ -47,7 +47,7 @@ que ven les pide algo que puedan contestar.
 
 ## Consultorio (odontología, kinesiología, psicología)
 
-**Link:** `https://muestras-datos.vercel.app/planilla?preset=pacientes`
+**Link:** `https://datos.joaquinrao.com.ar/planilla?preset=pacientes`
 
 > Hola, ¿cómo va? Soy Joaquín, trabajo con datos acá en zona norte.
 >
@@ -65,7 +65,7 @@ que ven les pide algo que puedan contestar.
 
 ## Distribuidora / mayorista
 
-**Link:** `https://muestras-datos.vercel.app/planilla?preset=clientes`
+**Link:** `https://datos.joaquinrao.com.ar/planilla?preset=clientes`
 
 > Hola, ¿qué tal? Soy Joaquín, de Martínez.
 >
