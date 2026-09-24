@@ -51,6 +51,10 @@ export type Preset = {
   gancho: string;
   columnas: Columna[];
   filas: Record<string, string>[];
+  /** La planilla como vino, celda por celda, cuando no venía prolija: con
+   *  el título arriba, filas en blanco, el total al pie. Es lo que recibe
+   *  el ordenador. Si no está, la planilla ya venía como tabla. */
+  grilla?: string[][];
 };
 
 export type CeldaLimpia = {

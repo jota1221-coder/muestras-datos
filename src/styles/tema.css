@@ -263,3 +263,88 @@
   font-size: 10.5px;
   font-weight: 600;
 }
+
+/* ── Ordenador: cambios de estructura ──────────────────────────── */
+
+.cambio {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  border: 1px solid var(--hairline);
+  background: var(--card-bg);
+  padding: 14px 16px;
+  transition: border-color 0.2s ease;
+}
+
+/* Un cambio rechazado se ve apagado pero sigue legible: hay que poder
+   volver a leerlo para cambiar de idea. */
+.cambio[data-aplicado="false"] {
+  border-style: dashed;
+}
+.cambio[data-aplicado="false"] > :not(.cambio-botones) {
+  opacity: 0.62;
+}
+
+.cambio-n {
+  font-size: 12px;
+  color: var(--fg-muted);
+  padding-top: 1px;
+}
+
+.cambio-ejemplo {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: var(--cambio-bg);
+  overflow-wrap: anywhere;
+}
+
+.valor-viejo-inline {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+
+.cambio-botones {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (min-width: 768px) {
+  .cambio {
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
+  }
+  .cambio-botones {
+    grid-column: 3;
+    margin-top: 0;
+  }
+}
+
+/* ── La planilla cruda, como la muestra Excel ──────────────────── */
+
+.tabla-cruda th.letra {
+  text-align: center;
+  font-weight: 500;
+  min-width: 90px;
+}
+
+.tabla-cruda td {
+  height: 34px;
+}
+
+/* El texto que se desborda no le da ancho a la columna: se posiciona
+   aparte para que la tabla calcule los anchos sólo con los datos. */
+.tabla-cruda td.desborda {
+  position: relative;
+}
+.tabla-cruda td.desborda > span {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}

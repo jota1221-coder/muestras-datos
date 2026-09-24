@@ -34,7 +34,7 @@ export default function PlanillaPage() {
           <p className="mt-6 max-w-2xl leading-relaxed" style={{ color: "var(--fg-muted)" }}>
             Esta es una planilla como las que hay en cualquier negocio: cargada
             por varias personas, durante años, cada una a su manera. Apretá
-            <strong style={{ color: "var(--fg)" }}> Limpiar </strong>
+            <strong style={{ color: "var(--fg)" }}> Ordenar </strong>
             y mirá qué cambia.
           </p>
         </div>

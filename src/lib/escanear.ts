@@ -30,7 +30,7 @@ const POR_ENCABEZADO: [RegExp, TipoColumna, string][] = [
   [/(mail|correo)/, "email", "el título habla de un mail"],
   [/(fecha|alta|visita|compra|publicad|vencim|ingreso)/, "fecha", "el título habla de una fecha"],
   [/(precio|monto|importe|total|valor|saldo|deuda)/, "moneda", "el título habla de plata"],
-  [/(localidad|ciudad|zona|barrio|partido|sucursal|obrasocial|cobertura)/, "localidad", "el título es de una categoría que se repite"],
+  [/(localidad|ciudad|zona|barrio|partido|sucursal|obrasocial|cobertura|proveedor|marca|rubro|categor|familia)/, "localidad", "el título es de una categoría que se repite"],
   [/(nombre|razon|cliente|paciente|propietario|apellido|titular|empresa)/, "nombre", "el título habla de un nombre"],
   [/(pago|pagado|entregado|activo|vigente|confirmad|cobrado|enviado|abonado)/, "siNo", "el título es una pregunta de sí o no"],
   [/(cantidad|stock|unidades|cant|edad|kilos|litros)/, "numero", "el título habla de una cantidad"],
@@ -52,6 +52,7 @@ const pareceFecha = (v: string) =>
   /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(v.trim());
 const pareceMoneda = (v: string) => /^[^\d]*(\$|u\$s|usd)/i.test(v.trim());
 const pareceSiNo = (v: string) => normalizarSiNo(v) !== null;
+const pareceEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const pareceNumero = (v: string) => {
   const t = v.trim();
   if (!t || /[a-zA-Z]/.test(t)) return false;
@@ -85,6 +86,11 @@ export function detectarTipo(encabezado: string, valores: string[]): Deteccion {
   ];
   const siNo = candidatos[0];
   if (siNo[0] >= 0.8) return { tipo: "siNo", confianza: "alta", razon: siNo[2] };
+
+  // Un mail no se parece a nada más: si la mayoría lo es, no hay duda.
+  if (proporcion(valores, pareceEmail) >= 0.8) {
+    return { tipo: "email", confianza: "alta", razon: "casi todos los valores son mails" };
+  }
 
   const mejor = candidatos.slice(1).sort((a, b) => b[0] - a[0])[0];
   if (mejor[0] >= 0.6) {

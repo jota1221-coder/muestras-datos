@@ -5,8 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { aplicarFusiones, limpiar } from "@/lib/limpiar";
 import { escanear } from "@/lib/escanear";
 import { PRESETS } from "@/lib/planillas";
-import { ErrorImportacion, presetDesdeArchivo } from "@/lib/importar";
-import type { Conteos, Fusion, Preset, TipoColumna } from "@/lib/planillas/tipos";
+import { ErrorImportacion, leerGrilla, type Lectura } from "@/lib/importar";
+import { grillaDePreset, ordenarFilas, ordenarGrilla, type Cambio } from "@/lib/ordenar";
+import type { Conteos, Fusion, TipoColumna } from "@/lib/planillas/tipos";
 
 /** Los nombres que ve el visitante. La clave interna no le dice nada a
  *  nadie: "siNo" es "Sí / No" y "cuit" es "CUIT o DNI". */
@@ -25,8 +26,9 @@ const NOMBRE_TIPO: Record<TipoColumna, string> = {
 
 /** Los contadores se arman desde el resultado y se filtran los que dieron
  *  cero: mostrar "0 duplicados" en una demo sobre limpieza es un autogol. */
-function lineasDeConteo(c: Conteos, unificadas: number) {
+function lineasDeConteo(c: Conteos, unificadas: number, estructura: number) {
   return [
+    { n: estructura, t: "cambios de estructura (los que aceptaste)" },
     { n: c.telefonosNormalizados, t: "teléfonos llevados a un formato único" },
     { n: unificadas, t: "filas unificadas (las que aceptaste)" },
     { n: c.localidadesUnificadas, t: "valores escritos de otra forma" },
@@ -39,6 +41,18 @@ function lineasDeConteo(c: Conteos, unificadas: number) {
   ].filter((l) => l.n > 0);
 }
 
+/** A, B, … Z, AA, AB: como las llama Excel. */
+function letraDeColumna(j: number): string {
+  let n = j + 1;
+  let s = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 export default function PlanillaDemo() {
   /* El rubro viene en el link que se manda en frío
      (/planilla?preset=propiedades). Se lee acá y no en el servidor para que
@@ -49,7 +63,7 @@ export default function PlanillaDemo() {
   const [slug, setSlug] = useState(
     PRESETS.some((p) => p.slug === pedido) ? pedido : PRESETS[0].slug,
   );
-  const [propia, setPropia] = useState<Preset | null>(null);
+  const [propia, setPropia] = useState<Lectura | null>(null);
   const [errorImport, setErrorImport] = useState("");
   const [leyendo, setLeyendo] = useState(false);
   const [limpia, setLimpia] = useState(false);
@@ -58,15 +72,50 @@ export default function PlanillaDemo() {
      lo que el motor sugiere, que no es lo mismo para todas: una fusión con
      un dato contradictorio viene sugerida en NO. */
   const [decisiones, setDecisiones] = useState<Record<string, boolean>>({});
+  /* Lo mismo para los cambios de estructura: sólo lo que se tocó a mano. */
+  const [decisionesOrden, setDecisionesOrden] = useState<Record<string, boolean>>({});
   /* Correcciones del visitante al tipo que detectó el escáner. Mandan
      sobre la detección: el que sabe qué guarda cada columna es él. */
   const [tiposManuales, setTiposManuales] = useState<Record<string, TipoColumna>>({});
   const inputArchivo = useRef<HTMLInputElement>(null);
 
-  const preset = useMemo(
-    () => propia ?? (PRESETS.find((p) => p.slug === slug) as Preset),
-    [propia, slug],
+  /* La planilla como vino. Los ejemplos que ya eran una tabla se pasan
+     a grilla igual: el ordenador trata a todas por el mismo camino. */
+  const fuente = useMemo(() => {
+    if (propia) {
+      return {
+        slug: "propia",
+        nombre: propia.nombre,
+        rubro: "Tu planilla",
+        gancho: propia.recortada
+          ? `${propia.nombre} — se muestran las primeras filas.`
+          : propia.nombre,
+        grilla: propia.grilla,
+        pistas: undefined,
+      };
+    }
+    const p = PRESETS.find((x) => x.slug === slug) ?? PRESETS[0];
+    return { ...p, grilla: p.grilla ?? grillaDePreset(p), pistas: p.columnas };
+  }, [propia, slug]);
+
+  const aceptadoOrden = (c: Cambio) => decisionesOrden[c.id] ?? c.porDefecto;
+
+  /* Primero la forma, después el contenido: separar una celda con
+     teléfono y mail tiene que pasar ANTES de limpiar el teléfono. */
+  const ordenado = useMemo(
+    () =>
+      ordenarGrilla(fuente.grilla, {
+        pistas: fuente.pistas,
+        aceptar: aceptadoOrden,
+        slug: fuente.slug,
+        nombre: fuente.nombre,
+        rubro: fuente.rubro,
+        gancho: fuente.gancho,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fuente, decisionesOrden],
   );
+  const preset = ordenado.preset;
 
   /* El escaneo va ANTES de limpiar y decide cómo limpiar: qué columna
      sirve para reconocer repetidos, qué valor de Sí/No es en realidad un
@@ -84,20 +133,25 @@ export default function PlanillaDemo() {
     () => new Set(resultado.fusiones.filter(aceptada).map((f) => f.id)),
     [resultado, decisiones],
   );
-  const filasFinales = useMemo(
-    () => aplicarFusiones(resultado, columnas, idsAceptadas),
-    [resultado, columnas, idsAceptadas],
-  );
+  const filasFinales = useMemo(() => {
+    const f = aplicarFusiones(resultado, columnas, idsAceptadas);
+    const o = ordenado.ordenFilas;
+    return o ? ordenarFilas(f, o, (x) => x.celdas[o.clave]?.valor ?? "") : f;
+  }, [resultado, columnas, idsAceptadas, ordenado.ordenFilas]);
+
+  const cambiosAplicados = ordenado.cambios.filter(aceptadoOrden);
 
   const unificadas = resultado.fusiones
     .filter(aceptada)
     .reduce((a, f) => a + f.absorbidas.length, 0);
-  const conteos = lineasDeConteo(resultado.conteos, unificadas);
-  const sinHallazgos = limpia && conteos.length === 0 && resultado.fusiones.length === 0;
+  const conteos = lineasDeConteo(resultado.conteos, unificadas, cambiosAplicados.length);
+  const sinHallazgos =
+    limpia && conteos.length === 0 && resultado.fusiones.length === 0 && ordenado.cambios.length === 0;
 
   function reiniciar() {
     setLimpia(false);
     setDecisiones({});
+    setDecisionesOrden({});
     setTiposManuales({});
   }
 
@@ -114,13 +168,13 @@ export default function PlanillaDemo() {
     setLeyendo(true);
     setErrorImport("");
     try {
-      setPropia(await presetDesdeArchivo(file));
+      setPropia(await leerGrilla(file));
       reiniciar();
     } catch (err) {
       setErrorImport(
         err instanceof ErrorImportacion
           ? err.message
-          : "No se pudo leer el archivo. Tiene que ser .xlsx o .csv, con los títulos en la primera fila.",
+          : "No se pudo leer el archivo. Tiene que ser .xlsx o .csv.",
       );
     } finally {
       setLeyendo(false);
@@ -133,17 +187,23 @@ export default function PlanillaDemo() {
   async function descargar() {
     setBajando(true);
     try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Limpia");
-      ws.addRow(columnas.map((c) => c.titulo));
-      ws.getRow(1).font = { bold: true };
-      for (const fila of filasFinales) {
-        ws.addRow(columnas.map((c) => fila.celdas[c.clave].valor));
-      }
-      ws.columns.forEach((col) => { col.width = 22; });
+      const [{ default: ExcelJS }, { armarExcel }] = await Promise.all([
+        import("exceljs"),
+        import("@/lib/exportar"),
+      ]);
+      const notas: string[] = [];
+      if (unificadas) notas.push(`${unificadas} fila${unificadas > 1 ? "s" : ""} repetida${unificadas > 1 ? "s" : ""} unificada${unificadas > 1 ? "s" : ""}.`);
+      for (const l of lineasDeConteo(resultado.conteos, 0, 0)) notas.push(`${l.n} ${l.t}.`);
 
-      const buf = await wb.xlsx.writeBuffer();
+      const buf = await armarExcel(ExcelJS, {
+        columnas,
+        filas: filasFinales,
+        columnasConTotal: ordenado.columnasConTotal,
+        tituloHoja: ordenado.tituloHoja,
+        cambiosAplicados,
+        notas,
+        original: fuente.grilla,
+      });
       const url = URL.createObjectURL(
         new Blob([buf], {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -151,7 +211,7 @@ export default function PlanillaDemo() {
       );
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${propia ? "tu-planilla" : preset.slug}-limpia.xlsx`;
+      a.download = `${propia ? "tu-planilla" : fuente.slug}-ordenada.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -170,6 +230,7 @@ export default function PlanillaDemo() {
   }
 
   const filasEnTabla = limpia ? filasFinales : null;
+  const anchoCrudo = Math.max(1, ...fuente.grilla.map((f) => f.length));
 
   return (
     <div>
@@ -199,7 +260,7 @@ export default function PlanillaDemo() {
       <div className="mt-7 flex flex-wrap items-center gap-3">
         {!limpia ? (
           <button className="cta-solid" onClick={() => setLimpia(true)}>
-            Limpiar la planilla
+            Ordenar la planilla
           </button>
         ) : (
           <>
@@ -207,14 +268,14 @@ export default function PlanillaDemo() {
               Ver cómo estaba
             </button>
             <button className="cta-solid" onClick={descargar} disabled={bajando}>
-              {bajando ? "Generando…" : "Descargar limpia (.xlsx)"}
+              {bajando ? "Generando…" : "Descargar ordenada (.xlsx)"}
             </button>
           </>
         )}
         <span className="text-sm" style={{ color: "var(--fg-muted)" }}>
           {limpia
-            ? `${filasFinales.length} filas · antes ${preset.filas.length}`
-            : `${preset.filas.length} filas como vinieron`}
+            ? `${filasFinales.length} filas · antes ${ordenado.filasOriginales}`
+            : `${fuente.grilla.length} filas como vino, contando títulos y renglones sueltos`}
         </span>
       </div>
 
@@ -302,6 +363,66 @@ export default function PlanillaDemo() {
         </p>
       )}
 
+      {/* Cambios de estructura — igual que los repetidos: se proponen,
+          se explican y se pueden rechazar uno por uno. */}
+      {limpia && ordenado.cambios.length > 0 && (
+        <div className="mt-8">
+          <p className="font-display text-lg">Cómo la ordené</p>
+          <p className="mt-2 text-sm leading-relaxed max-w-2xl" style={{ color: "var(--fg-muted)" }}>
+            Esto es la forma de la tabla, no los datos. Cada cambio viene
+            con su motivo; si alguno no te sirve, lo dejás como estaba y la
+            tabla se rehace sola.
+          </p>
+
+          <ol className="mt-5 grid gap-3">
+            {ordenado.cambios.map((c, i) => {
+              const si = aceptadoOrden(c);
+              return (
+                <li key={c.id} className="cambio" data-aplicado={si}>
+                  <span className="cambio-n font-mono" aria-hidden>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{c.titulo}</p>
+                    <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                      {c.detalle}
+                    </p>
+                    {c.ejemplo && (
+                      <p className="cambio-ejemplo font-mono">
+                        <span className="valor-viejo-inline">{c.ejemplo.antes}</span>
+                        {c.ejemplo.despues && (
+                          <>
+                            <span aria-hidden> → </span>
+                            <span className="sr-only"> queda así: </span>
+                            <span>{c.ejemplo.despues}</span>
+                          </>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="cambio-botones">
+                    <button
+                      className="tab"
+                      aria-selected={si}
+                      onClick={() => setDecisionesOrden((d) => ({ ...d, [c.id]: true }))}
+                    >
+                      Aplicar
+                    </button>
+                    <button
+                      className="tab"
+                      aria-selected={!si}
+                      onClick={() => setDecisionesOrden((d) => ({ ...d, [c.id]: false }))}
+                    >
+                      Dejar como estaba
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+
       {/* Posibles repetidos — se proponen, no se aplican solos */}
       {limpia && resultado.fusiones.length > 0 && (
         <div className="mt-8">
@@ -355,69 +476,101 @@ export default function PlanillaDemo() {
         </div>
       )}
 
-      {/* Tabla */}
+      {/* Tabla. Antes de ordenar se ve como la ve Excel —letras arriba,
+          números al costado, el título pegado, los renglones sueltos—
+          porque el desorden de forma sólo se entiende viéndolo así. */}
       <div className="tabla-scroll mt-8">
-        <table className="tabla font-mono">
-          <thead>
-            <tr>
-              <th className="num">#</th>
-              {columnas.map((c) => (
-                <th key={c.clave}>{c.titulo}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filasEnTabla
-              ? filasEnTabla.map((fila) => (
-                  <tr key={fila.indiceOriginal}>
-                    <td className="num">{fila.indiceOriginal}</td>
-                    {columnas.map((c, i) => {
-                      const celda = fila.celdas[c.clave];
-                      const clases = celda.alerta
-                        ? "celda-alerta"
-                        : celda.cambio
-                          ? "celda-cambio"
-                          : "";
-                      return (
-                        <td key={c.clave} className={clases}>
-                          {celda.valor || (
-                            <span style={{ color: "var(--fg-muted)" }}>—</span>
-                          )}
-                          {celda.cambio && celda.original && (
-                            <span className="valor-viejo">{celda.original}</span>
-                          )}
-                          {celda.alerta && (
-                            <span className="nota-alerta">{celda.alerta}</span>
-                          )}
-                          {i === 0 && fila.absorbio.length > 0 && (
-                            <span className="badge-fusion">
-                              + fila {fila.absorbio.join(", ")}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              : preset.filas.map((fila, i) => (
-                  <tr key={i}>
-                    <td className="num">{i + 1}</td>
-                    {columnas.map((c) => (
-                      <td key={c.clave}>
-                        {fila[c.clave] || (
+        {filasEnTabla ? (
+          <table className="tabla font-mono">
+            <thead>
+              <tr>
+                <th className="num">#</th>
+                {columnas.map((c) => (
+                  <th key={c.clave}>{c.titulo}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filasEnTabla.map((fila) => (
+                <tr key={fila.indiceOriginal}>
+                  <td className="num">{fila.indiceOriginal}</td>
+                  {columnas.map((c, i) => {
+                    const celda = fila.celdas[c.clave];
+                    const clases = celda.alerta
+                      ? "celda-alerta"
+                      : celda.cambio
+                        ? "celda-cambio"
+                        : "";
+                    return (
+                      <td key={c.clave} className={clases}>
+                        {celda.valor || (
                           <span style={{ color: "var(--fg-muted)" }}>—</span>
                         )}
+                        {celda.cambio && celda.original && (
+                          <span className="valor-viejo">{celda.original}</span>
+                        )}
+                        {celda.alerta && (
+                          <span className="nota-alerta">{celda.alerta}</span>
+                        )}
+                        {i === 0 && fila.absorbio.length > 0 && (
+                          <span className="badge-fusion">
+                            + fila {fila.absorbio.join(", ")}
+                          </span>
+                        )}
                       </td>
-                    ))}
-                  </tr>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <table className="tabla tabla-cruda font-mono">
+            <thead>
+              <tr>
+                <th className="num" aria-label="Fila" />
+                {Array.from({ length: anchoCrudo }, (_, j) => (
+                  <th key={j} className="letra">
+                    {letraDeColumna(j)}
+                  </th>
                 ))}
-          </tbody>
-        </table>
+              </tr>
+            </thead>
+            <tbody>
+              {fuente.grilla.map((fila, i) => {
+                // Una fila con una sola celda llena (el título, una nota)
+                // se desborda sobre las vacías de al lado, como en Excel,
+                // en vez de ensanchar toda la columna.
+                const llenas = fila.map((c, j) => (c?.trim() ? j : -1)).filter((j) => j >= 0);
+                const unica = llenas.length === 1 ? llenas[0] : -1;
+                return (
+                  <tr key={i}>
+                    <td className="num">{i + 1}</td>
+                    {unica >= 0 ? (
+                      <>
+                        {Array.from({ length: unica }, (_, j) => (
+                          <td key={j} />
+                        ))}
+                        <td colSpan={anchoCrudo - unica} className="desborda">
+                          <span>{fila[unica]}</span>
+                        </td>
+                      </>
+                    ) : (
+                      Array.from({ length: anchoCrudo }, (_, j) => (
+                        <td key={j}>{fila[j] ?? ""}</td>
+                      ))
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <p className="mt-4 text-xs" style={{ color: "var(--fg-muted)" }}>
         {limpia
-          ? "En amarillo lo que se corrigió, con el valor anterior tachado. En rojo lo que no se corrige solo y hay que mirar. Nada se borra sin que lo aceptes."
+          ? "En amarillo lo que se corrigió, con el valor anterior tachado. En rojo lo que no se corrige solo y hay que mirar. El Excel que descargás trae también la planilla original, sin tocar."
           : propia
             ? "Tu planilla, como la subiste."
             : "Datos de ejemplo. Ninguna persona, negocio ni teléfono de esta tabla es real."}
