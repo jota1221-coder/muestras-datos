@@ -54,7 +54,7 @@ export default function PlanillaPage() {
             Esto mismo, con tu base de verdad
           </h2>
           <p className="mt-5 max-w-2xl leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-            La planilla de arriba tiene 15 filas. El mismo proceso corrió sobre
+            La planilla de arriba es un ejemplo chico. El mismo proceso corrió sobre
             una base real de más de 17.000 contactos de tres fuentes distintas
             —dos planillas y la agenda de un celular— y terminó en una sola
             base ordenada, sin duplicados y con los teléfonos verificados.
@@ -70,7 +70,7 @@ export default function PlanillaPage() {
           Muestra de ejemplo — los datos de la tabla son inventados: ninguna
           persona, negocio, teléfono ni CUIT de esta pantalla corresponde a
           alguien real.{" "}
-          <a href={CONTACTO} target="_blank" rel="noopener" className="underline underline-offset-4">
+          <a href="https://joaquinrao.com.ar" target="_blank" rel="noopener" className="underline underline-offset-4">
             Hecho por Joaquín Rao
           </a>
         </p>
